@@ -5,3 +5,9 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+
+# Standalone trajectory experiment artifacts and third-party checkouts.
+trajectory_experiments/.venv/
+trajectory_experiments/data/
+trajectory_experiments/runs/
+trajectory_experiments/vendor/
