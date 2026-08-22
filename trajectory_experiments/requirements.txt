@@ -1,0 +1,7 @@
+-e .
+-e ./trajectory_experiments/vendor/SWE-smith
+datasets==5.0.1
+docker==7.2.0
+ghapi==1.1.0
+swebench==4.1.0
+unidiff==1.0.0
