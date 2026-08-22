@@ -1,0 +1,41 @@
+{
+  "counts": {
+    "deduplicated_samples": 0,
+    "eval_samples": 86,
+    "eval_trajectories": 5,
+    "final_answer_samples": 51,
+    "source_strict_trajectories": 51,
+    "tool_call_samples": 781,
+    "train_samples": 746,
+    "train_trajectories": 46
+  },
+  "created_at": "2026-08-22T09:02:36.409076+00:00",
+  "files": {
+    "eval.jsonl": "34431528a5e8706b3da0eefbe47a34777c9252087537a631b06a596b215a1f95",
+    "index.jsonl": "c86d6c4177daa28ec0233425c39884d2c40b8d1b299e0bf459800f11ee05176d",
+    "train.jsonl": "b0dfe58ca353dfbac2be9096cf0ecfef956fe8dc720fa5e101517e3286b13ce7"
+  },
+  "format": "ms-swift/OpenAI messages with JSON-string tools",
+  "quality_filter": "agent.status == succeeded AND evaluation.resolved == true",
+  "schema_version": 1,
+  "source": {
+    "agent_commit": "239881c5fbdfb3ae3a5a94bc3557ac48d6f572e8",
+    "run_dir": "/Users/lcp/Documents/try/CPCodeAgent/trajectory_experiments/runs/qwen37-python-pptx-100",
+    "run_id": "qwen37-python-pptx-100",
+    "teacher_model": "qwen3.7-max"
+  },
+  "split_policy": {
+    "by": "trajectory instance_id (no cross-split trajectory leakage)",
+    "eval_ratio": 0.1,
+    "seed": 42
+  },
+  "teacher_token_estimates": {
+    "max": 18571,
+    "p50": 5416,
+    "p90": 10243,
+    "p95": 11962,
+    "p99": 15277,
+    "samples_over_16384": 5
+  },
+  "unit": "one exact teacher decision point per sample"
+}
