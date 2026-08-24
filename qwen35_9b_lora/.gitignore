@@ -3,3 +3,4 @@ output/
 merged/
 *.log
 
+runs/
