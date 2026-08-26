@@ -6,7 +6,8 @@ maximize framework surface area, but to make four difficult properties explicit:
 1. a session is a durable sequence of turns, while model context is only a replayable view;
 2. one semantic `Action` classification drives scheduling, permission, and retry;
 3. read calls may run concurrently while side effects cross deterministic barriers;
-4. interrupted side effects are reconciled conservatively and never replayed blindly.
+4. every side effect follows a durable intent/start/commit protocol, so interrupted
+   actions are reconciled from evidence and never replayed blindly.
 
 ## Architecture
 
@@ -17,7 +18,8 @@ Session
    └── Journal       append-only history, checkpoints, recovery
           │
           ├── Context       replay projection, compaction, active skill
-          └── ActionRuntime classify → policy → schedule → execute
+          └── ActionRuntime classify → policy → intent → start → commit
+                                      └── recovery contract → reconcile
 ```
 
 The implementation deliberately has no generic hook bus, planner DAG, or built-in
@@ -33,11 +35,14 @@ multi-agent layer. Extension happens through a few direct interfaces: `Model`, `
 3. The model returns text and/or `ToolCall` values.
 4. Every tool first runs `classify(arguments) -> Action`. The action contains only its
    required capabilities, concrete targets, and idempotency.
-5. `RunPolicy` returns `ALLOW`, `ASK`, or `DENY`.
-6. Consecutive read-only actions execute in parallel. A write or external effect is a
+5. `RunPolicy` returns `ALLOW`, `ASK`, or `DENY`; an authorized tool then creates a small
+   `EffectContract` describing safe recovery.
+6. The runtime fsyncs a `TOOL_CALL` intent before execution, fsyncs `TOOL_STARTED` before
+   handing control to the tool, and commits one `TOOL_RESULT` with observed revisions.
+7. Consecutive read-only actions execute in parallel. A write or external effect is a
    serial barrier.
-7. Results and a workspace checkpoint are durably appended before the next model call.
-8. A final model answer passes through one optional `Verifier` before the turn succeeds.
+8. Results and a workspace checkpoint are durably appended before the next model call.
+9. A final model answer passes through one optional `Verifier` before the turn succeeds.
    The next user message starts a new turn with fresh budgets and the same durable history.
 
 ## Package layout
@@ -53,6 +58,7 @@ cpcodeagent/
   policy.py          one ALLOW / ASK / DENY decision
   executor.py        confined file I/O, local execution, Docker sandbox
   journal.py         durable append-only JSONL event journal
+  recovery.py        action-ledger projection and effect contracts
   model.py           provider-neutral streaming, retry, one fallback
   ui.py              Rich spinner, token stream, tool and verifier progress
   verifier.py        explicit completion gate
@@ -80,14 +86,28 @@ Reproduce the failure, trace the smallest relevant path, make a focused change, 
 
 ## Failure semantics
 
-There are only three recovery decisions:
+The action journal is a write-ahead log with three externally meaningful states:
 
-- **Retry** when the operation is known to be safe: transient model failures and
-  idempotent read tools.
-- **Reconcile** when a write may have happened. The harness compares the current
-  workspace revision with the pre-call revision.
-- **Stop** with `UNKNOWN_COMMIT` when a side effect may have happened and cannot be
-  proven safe to replay.
+```text
+INTENT --durable TOOL_STARTED--> STARTED --durable TOOL_RESULT--> COMMITTED
+```
+
+Recovery makes only three decisions:
+
+- **Retry** when there is no `TOOL_STARTED` marker, or when a started operation is
+  explicitly retry-safe.
+- **Reconcile** deterministic file writes against their recorded before/after content
+  digests. A matching postcondition is committed as recovered; a matching precondition
+  proves the atomic replace did not happen and permits one safe retry.
+- **Stop** with `RECOVERY_CONFLICT` when a file matches neither state, or
+  `UNKNOWN_COMMIT` when an opaque side effect such as a command started but cannot be
+  verified. Neither case is automatically replayed.
+
+Runtime-owned file writes use per-action staging names, fsync file contents, atomically
+replace the target, and fsync the containing directory. An interrupted final model
+response is also settled from the journal instead of being requested from the provider
+a second time. See [`docs/crash-consistency.md`](docs/crash-consistency.md) for the
+invariants and extension contract.
 
 Model API retries are owned by `ResilientModel`, so provider SDK retries should remain
 disabled. Context overflow triggers one forced compaction. A provider can have one

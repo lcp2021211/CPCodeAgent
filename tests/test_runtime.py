@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from cpcodeagent.executor import ExecutionEnv, LocalExecutor
-from cpcodeagent.journal import Journal
+from cpcodeagent.journal import EventKind, Journal
 from cpcodeagent.policy import RunPolicy
+from cpcodeagent.recovery import ActionLedger, ActionState, RecoveryMode
 from cpcodeagent.tools import Tool, ToolExecution, ToolRuntime
 from cpcodeagent.types import Action, Capability, ToolCall
 
@@ -96,6 +97,38 @@ class RuntimeTests(unittest.TestCase):
             )[0]
             self.assertFalse(Path(directory, "x.txt").exists())
         self.assertEqual(result.error, "POLICY_DENIED")
+
+    def test_file_action_has_durable_lifecycle_and_observation(self) -> None:
+        from cpcodeagent.builtin_tools import WriteFileTool
+
+        runtime = ToolRuntime([WriteFileTool()])
+        with tempfile.TemporaryDirectory() as directory:
+            journal = Journal()
+            result = runtime.execute_batch(
+                [ToolCall("write-1", "write_file", {"path": "x.txt", "content": "x"})],
+                RunPolicy(),
+                LocalExecutor(directory),
+                journal,
+                response_seq=7,
+            )[0]
+
+            lifecycle = [
+                event.kind
+                for event in journal.events
+                if event.kind
+                in {EventKind.TOOL_CALL, EventKind.TOOL_STARTED, EventKind.TOOL_RESULT}
+            ]
+            record = ActionLedger.from_journal(journal).records[0]
+
+        self.assertTrue(result.ok)
+        self.assertEqual(
+            lifecycle,
+            [EventKind.TOOL_CALL, EventKind.TOOL_STARTED, EventKind.TOOL_RESULT],
+        )
+        self.assertEqual(record.state, ActionState.COMMITTED)
+        self.assertEqual(record.response_seq, 7)
+        self.assertEqual(record.contract.mode, RecoveryMode.VERIFY_FILES)
+        self.assertEqual(record.commit.data["observation"]["changed_paths"], ["x.txt"])
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ from .executor import Executor
 from .journal import EventKind, Journal
 from .model import ContextOverflowError, Model, ModelError
 from .policy import Approver, RejectingApprover, RunPolicy
+from .recovery import ActionLedger, ActionRecord
 from .session import SessionState
 from .skills import SkillRegistry
 from .tools import ToolRuntime
@@ -163,31 +164,76 @@ class Harness:
         run_id = state.session_id
         turn_start_seq = turn.input_seq
 
-        handled = {
-            event.data["call"]["id"]
-            for event in journal.find(EventKind.TOOL_CALL, turn_start_seq)
-        }
+        def recover(record: ActionRecord) -> RunOutcome | None:
+            self._emit(RunEventKind.TOOLS_START, calls=(record.call,))
+            result = self.tools.recover_pending(record, executor, journal)
+            self._emit(RunEventKind.TOOLS_END, results=(result,))
+            if result.error not in {"UNKNOWN_COMMIT", "RECOVERY_CONFLICT"}:
+                return None
+            return self._finish(
+                journal,
+                run_id,
+                RunStatus.NEEDS_CONFIRMATION,
+                result.output,
+                self._progress(journal, turn_start_seq),
+                turn.turn_id,
+            )
+
+        ledger = ActionLedger.from_journal(journal, turn_start_seq)
         last_response = journal.last(EventKind.MODEL_RESPONSE, turn_start_seq)
+        older_pending = tuple(
+            record
+            for record in ledger.pending()
+            if last_response is None or record.intent.seq < last_response.seq
+        )
+        for pending in older_pending:
+            outcome = recover(pending)
+            if outcome is not None:
+                return outcome
+
         if last_response:
             response = ModelResponse.from_dict(last_response.data["response"])
-            unstarted = [call for call in response.tool_calls if call.id not in handled]
-            if unstarted:
-                self._execute_tools(unstarted, executor, journal)
+            # Preserve the provider's original call order during recovery.  A
+            # later unstarted action must not cross an earlier uncertain write.
+            for call in response.tool_calls:
+                ledger = ActionLedger.from_journal(journal, turn_start_seq)
+                record = ledger.find_intent(last_response.seq, call.id)
+                if record is None:
+                    self._execute_tools(
+                        (call,),
+                        executor,
+                        journal,
+                        response_seq=last_response.seq,
+                    )
+                    continue
+                if record.commit is not None:
+                    continue
+                outcome = recover(record)
+                if outcome is not None:
+                    return outcome
 
-        for pending in journal.pending_tool_calls(turn_start_seq):
-            call = ToolCall.from_dict(pending.data["call"])
-            self._emit(RunEventKind.TOOLS_START, calls=(call,))
-            result = self.tools.recover_pending(pending, executor, journal)
-            self._emit(RunEventKind.TOOLS_END, results=(result,))
-            if result.error == "UNKNOWN_COMMIT":
-                return self._finish(
+        ledger = ActionLedger.from_journal(journal, turn_start_seq)
+        for pending in ledger.pending():
+            outcome = recover(pending)
+            if outcome is not None:
+                return outcome
+
+        if last_response:
+            response = ModelResponse.from_dict(last_response.data["response"])
+            continued_after_response = bool(
+                journal.find(EventKind.INPUT, last_response.seq)
+            )
+            if not response.tool_calls and not continued_after_response:
+                outcome = self._settle_completion(
+                    response,
+                    executor,
                     journal,
                     run_id,
-                    RunStatus.NEEDS_CONFIRMATION,
-                    result.output,
-                    self._progress(journal, turn_start_seq),
                     turn.turn_id,
+                    self._progress(journal, turn_start_seq),
                 )
+                if outcome is not None:
+                    return outcome
         self._checkpoint(journal, executor, ())
         return self._drive(
             task,
@@ -262,11 +308,19 @@ class Harness:
                     turn_id,
                 )
 
-            journal.append(EventKind.MODEL_RESPONSE, {"response": response.to_dict()})
+            response_event = journal.append(
+                EventKind.MODEL_RESPONSE,
+                {"response": response.to_dict()},
+            )
             progress.steps += 1
             progress.tokens += response.prompt_tokens + response.completion_tokens
             if response.tool_calls:
-                results = self._execute_tools(response.tool_calls, executor, journal)
+                results = self._execute_tools(
+                    response.tool_calls,
+                    executor,
+                    journal,
+                    response_seq=response_event.seq,
+                )
                 current_view = self.context.build(
                     journal,
                     task,
@@ -308,43 +362,16 @@ class Harness:
                     progress.recent_fingerprints.clear()
                 continue
 
-            if not response.content.strip():
-                return self._finish(
-                    journal,
-                    run_id,
-                    RunStatus.FAILED,
-                    "Model returned an empty response.",
-                    progress,
-                    turn_id,
-                )
-
-            if self.verifier is not None:
-                self._emit(RunEventKind.VERIFY_START)
-                verification = self.verifier.verify(executor)
-                self._emit(
-                    RunEventKind.VERIFY_END,
-                    passed=verification.passed,
-                    output=verification.output,
-                )
-                if not verification.passed:
-                    journal.append(
-                        EventKind.INPUT,
-                        {
-                            "content": f"Completion verification failed:\n{verification.output}",
-                            "source": "verifier",
-                            "turn_id": turn_id,
-                        },
-                    )
-                    self._checkpoint(journal, executor, ())
-                    continue
-            return self._finish(
+            outcome = self._settle_completion(
+                response,
+                executor,
                 journal,
                 run_id,
-                RunStatus.SUCCEEDED,
-                response.content,
-                progress,
                 turn_id,
+                progress,
             )
+            if outcome is not None:
+                return outcome
 
     def _complete_model(self, messages: tuple[dict, ...]) -> ModelResponse:
         self._emit(RunEventKind.MODEL_START, model=self.model.name)
@@ -362,6 +389,7 @@ class Harness:
         calls: tuple[ToolCall, ...] | list[ToolCall],
         executor: Executor,
         journal: Journal,
+        response_seq: int | None = None,
     ) -> tuple[ToolResult, ...]:
         calls = tuple(calls)
         self._emit(RunEventKind.TOOLS_START, calls=calls)
@@ -371,6 +399,7 @@ class Harness:
             executor,
             journal,
             self.approver,
+            response_seq=response_seq,
         )
         self._emit(RunEventKind.TOOLS_END, results=results)
         return results
@@ -378,6 +407,54 @@ class Harness:
     def _emit(self, kind: RunEventKind, **data: object) -> None:
         if self.event_sink is not None:
             self.event_sink(RunEvent(kind, dict(data)))
+
+    def _settle_completion(
+        self,
+        response: ModelResponse,
+        executor: Executor,
+        journal: Journal,
+        run_id: str,
+        turn_id: str,
+        progress: RunProgress,
+    ) -> RunOutcome | None:
+        """Commit a completed model answer without requesting it a second time."""
+
+        if not response.content.strip():
+            return self._finish(
+                journal,
+                run_id,
+                RunStatus.FAILED,
+                "Model returned an empty response.",
+                progress,
+                turn_id,
+            )
+        if self.verifier is not None:
+            self._emit(RunEventKind.VERIFY_START)
+            verification = self.verifier.verify(executor)
+            self._emit(
+                RunEventKind.VERIFY_END,
+                passed=verification.passed,
+                output=verification.output,
+            )
+            if not verification.passed:
+                journal.append(
+                    EventKind.INPUT,
+                    {
+                        "content": f"Completion verification failed:\n{verification.output}",
+                        "source": "verifier",
+                        "turn_id": turn_id,
+                    },
+                )
+                self._checkpoint(journal, executor, ())
+                return None
+        return self._finish(
+            journal,
+            run_id,
+            RunStatus.SUCCEEDED,
+            response.content,
+            progress,
+            turn_id,
+        )
 
     def _budget_error(self, progress: RunProgress) -> str | None:
         if progress.steps >= self.limits.max_steps:

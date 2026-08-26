@@ -6,6 +6,7 @@ from .journal import Journal
 from .kernel import Harness
 from .model import OpenAICompatibleModel, ResilientModel, ScriptedModel
 from .policy import RunPolicy
+from .recovery import ActionLedger, ActionState, EffectContract, EffectState, RecoveryMode
 from .session import Session, SessionState, SessionStore, TurnState
 from .skills import SkillRegistry
 from .tools import ToolRuntime
@@ -13,12 +14,17 @@ from .types import RunEvent, RunEventKind, RunLimits, RunOutcome
 from .ui import TerminalUI
 
 __all__ = [
+    "ActionLedger",
+    "ActionState",
     "ContextEngine",
     "DockerExecutor",
+    "EffectContract",
+    "EffectState",
     "Harness",
     "Journal",
     "LocalExecutor",
     "OpenAICompatibleModel",
+    "RecoveryMode",
     "ResilientModel",
     "RunEvent",
     "RunEventKind",

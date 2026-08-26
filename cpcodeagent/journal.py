@@ -18,6 +18,7 @@ class EventKind(str, Enum):
     INPUT = "input"
     MODEL_RESPONSE = "model_response"
     TOOL_CALL = "tool_call"
+    TOOL_STARTED = "tool_started"
     TOOL_RESULT = "tool_result"
     CHECKPOINT = "checkpoint"
     FINAL = "final"
@@ -68,11 +69,14 @@ class Journal:
             event = Event(seq=len(self._events), time=time.time(), kind=kind, data=data)
             if self.path:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
+                new_file = not self.path.exists()
                 encoded = json.dumps(event.to_dict(), ensure_ascii=False, sort_keys=True)
                 with self.path.open("a", encoding="utf-8") as handle:
                     handle.write(encoded + "\n")
                     handle.flush()
                     os.fsync(handle.fileno())
+                if new_file:
+                    _fsync_directory(self.path.parent)
             self._events.append(event)
             return event
 
@@ -90,6 +94,12 @@ class Journal:
         return None
 
     def pending_tool_calls(self, after_seq: int = -1) -> tuple[Event, ...]:
+        """Return legacy call intents without a result.
+
+        New recovery code uses :class:`ActionLedger`, which keys lifecycle
+        events by action ID.  This method remains for journal compatibility.
+        """
+
         completed = {
             event.data["result"]["call_id"]
             for event in self.events
@@ -137,3 +147,21 @@ class Journal:
             with self.path.open("r+b") as handle:
                 handle.truncate(valid_bytes)
         self._events = loaded
+
+
+def _fsync_directory(path: Path) -> None:
+    """Persist directory metadata where the host filesystem supports it."""
+
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        # Some filesystems do not support directory fsync.  File contents were
+        # still fsynced above, and replay remains safe when the entry exists.
+        pass
+    finally:
+        os.close(descriptor)

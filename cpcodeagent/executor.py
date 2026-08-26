@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -11,6 +12,9 @@ import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+
+_OPERATION_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+_INTERNAL_STAGING = re.compile(r"^\..+\.cpcodeagent-[0-9a-f]{32}\.tmp$")
 
 
 class ExecutionError(RuntimeError):
@@ -72,19 +76,64 @@ class Executor:
             rendered += f"\n... ({len(lines)} lines total)"
         return rendered or "(empty file)"
 
-    def write_text(self, path: str, content: str) -> None:
+    def file_digest(self, path: str) -> str | None:
+        """Return a file's content identity, or ``None`` when it is not a file."""
+
+        target = self.resolve(path)
+        if not target.is_file():
+            return None
+        return hashlib.sha256(target.read_bytes()).hexdigest()
+
+    def write_text(
+        self,
+        path: str,
+        content: str,
+        operation_id: str | None = None,
+    ) -> None:
+        """Atomically replace a file and make its directory entry durable.
+
+        Runtime-owned writes use a deterministic staging name.  If the process
+        stops before ``os.replace``, recovery can remove only that action's
+        orphan rather than guessing which temporary files are safe to delete.
+        """
+
         target = self.resolve(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+        if operation_id is not None:
+            if not _OPERATION_ID.fullmatch(operation_id):
+                raise ValueError("Invalid operation ID")
+            temporary = str(
+                target.parent / f".{target.name}.cpcodeagent-{operation_id}.tmp"
+            )
+            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        else:
+            fd, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(content)
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, target)
+            _fsync_directory(target.parent)
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
+
+    def discard_staged_writes(
+        self,
+        operation_id: str,
+        targets: Sequence[str],
+    ) -> None:
+        """Remove staging files belonging to one interrupted action only."""
+
+        if not _OPERATION_ID.fullmatch(operation_id):
+            raise ValueError("Invalid operation ID")
+        for target_name in targets:
+            target = self.resolve(target_name)
+            staged = target.parent / f".{target.name}.cpcodeagent-{operation_id}.tmp"
+            if staged.is_file():
+                staged.unlink()
+                _fsync_directory(staged.parent)
 
     def list_files(self, pattern: str = "**/*", limit: int = 500) -> tuple[str, ...]:
         matches: list[str] = []
@@ -126,7 +175,12 @@ class Executor:
     def snapshot(self) -> WorkspaceSnapshot:
         files: list[tuple[str, str]] = []
         for path in sorted(self.workspace.rglob("*")):
-            if not path.is_file() or ".git" in path.parts or "__pycache__" in path.parts:
+            if (
+                not path.is_file()
+                or ".git" in path.parts
+                or "__pycache__" in path.parts
+                or _is_staged_write(path)
+            ):
                 continue
             relative = path.relative_to(self.workspace).as_posix()
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -226,7 +280,26 @@ class DockerExecutor(Executor):
 @dataclass(frozen=True)
 class ExecutionEnv:
     executor: Executor
+    action_id: str | None = None
 
     @property
     def workspace(self) -> Path:
         return self.executor.workspace
+
+
+def _is_staged_write(path: Path) -> bool:
+    return bool(_INTERNAL_STAGING.fullmatch(path.name))
+
+
+def _fsync_directory(path: Path) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        pass
+    finally:
+        os.close(descriptor)
