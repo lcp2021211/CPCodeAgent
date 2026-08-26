@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from .executor import ExecutionEnv, ExecutionError, Executor
-from .journal import Event, EventKind, Journal
+from .journal import EventKind, Journal
 from .policy import Approver, RejectingApprover, RunPolicy
-from .types import Action, Capability, Decision, ToolCall, ToolResult
+from .recovery import (
+    ActionRecord,
+    EffectContract,
+    EffectState,
+    RecoveryMode,
+)
+from .types import Action, Decision, ToolCall, ToolResult
 
 
 @dataclass(frozen=True)
@@ -45,6 +52,24 @@ class Tool(ABC):
     def execute(self, arguments: dict[str, Any], env: ExecutionEnv) -> ToolExecution:
         """Execute inside the provided environment."""
 
+    def effect_contract(
+        self,
+        arguments: dict[str, Any],
+        action: Action,
+        env: ExecutionEnv,
+        action_id: str,
+    ) -> EffectContract:
+        """Describe how an interrupted action can be reconciled.
+
+        Extension tools get conservative defaults: reads/idempotent operations
+        are retryable, while an opaque side effect requires human resolution
+        once it has started.
+        """
+
+        if action.read_only or action.idempotent:
+            return EffectContract.retry_safe()
+        return EffectContract.manual()
+
 
 @dataclass(frozen=True)
 class _Prepared:
@@ -52,6 +77,8 @@ class _Prepared:
     tool: Tool | None
     action: Action | None
     immediate: ToolResult | None
+    action_id: str | None = None
+    contract: EffectContract | None = None
 
 
 class ToolRuntime:
@@ -80,6 +107,7 @@ class ToolRuntime:
         executor: Executor,
         journal: Journal,
         approver: Approver | None = None,
+        response_seq: int | None = None,
     ) -> tuple[ToolResult, ...]:
         env = ExecutionEnv(executor)
         approver = approver or RejectingApprover()
@@ -90,7 +118,10 @@ class ToolRuntime:
         while index < len(prepared):
             item = prepared[index]
             if item.immediate is not None:
-                self._record_calls((item,), executor, journal)
+                item = self._materialize(item, env)
+                self._record_intents((item,), executor, journal, response_seq)
+                assert item.immediate is not None
+                self._commit(journal, item, item.immediate)
                 segment_results = [item.immediate]
                 index += 1
             elif item.action and item.action.read_only:
@@ -102,68 +133,186 @@ class ToolRuntime:
                     and prepared[end].action.read_only
                 ):
                     end += 1
-                segment = prepared[index:end]
-                self._record_calls(segment, executor, journal)
+                segment = tuple(self._materialize(value, env) for value in prepared[index:end])
+                self._record_intents(segment, executor, journal, response_seq)
                 with ThreadPoolExecutor(
                     max_workers=min(self.max_parallel_reads, len(segment))
                 ) as pool:
-                    segment_results = list(pool.map(lambda value: self._execute(value, env), segment))
+                    segment_results = list(
+                        pool.map(
+                            lambda value: self._settle(value, executor, journal),
+                            segment,
+                        )
+                    )
                 index = end
             else:
-                self._record_calls((item,), executor, journal)
-                segment_results = [self._execute(item, env)]
+                item = self._materialize(item, env)
+                self._record_intents((item,), executor, journal, response_seq)
+                if item.immediate is not None:
+                    self._commit(journal, item, item.immediate)
+                    segment_results = [item.immediate]
+                else:
+                    segment_results = [self._execute_and_commit(item, executor, journal)]
                 index += 1
 
-            for result in segment_results:
-                journal.append(EventKind.TOOL_RESULT, {"result": result.to_dict()})
-                results.append(result)
+            results.extend(segment_results)
         return tuple(results)
 
+    def _materialize(self, item: _Prepared, env: ExecutionEnv) -> _Prepared:
+        action_id = uuid.uuid4().hex
+        if item.immediate is not None or item.tool is None or item.action is None:
+            return replace(item, action_id=action_id)
+        try:
+            contract = item.tool.effect_contract(
+                item.call.arguments,
+                item.action,
+                env,
+                action_id,
+            )
+        except ExecutionError as exc:
+            return replace(
+                item,
+                action_id=action_id,
+                immediate=ToolResult(
+                    item.call.id,
+                    False,
+                    output=str(exc),
+                    error=exc.code,
+                ),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            return replace(
+                item,
+                action_id=action_id,
+                immediate=ToolResult(
+                    item.call.id,
+                    False,
+                    output=str(exc),
+                    error="EFFECT_PREPARATION_FAILED",
+                ),
+            )
+        return replace(item, action_id=action_id, contract=contract)
+
     @staticmethod
-    def _record_calls(
-        items: Sequence[_Prepared], executor: Executor, journal: Journal
+    def _record_intents(
+        items: Sequence[_Prepared],
+        executor: Executor,
+        journal: Journal,
+        response_seq: int | None,
     ) -> None:
         baseline = executor.snapshot().revision
         for item in items:
+            assert item.action_id is not None
             journal.append(
                 EventKind.TOOL_CALL,
                 {
+                    "action_id": item.action_id,
                     "call": item.call.to_dict(),
                     "action": item.action.to_dict() if item.action else None,
                     "authorized": item.immediate is None,
                     "workspace_revision": baseline,
+                    "response_seq": response_seq,
+                    "effect_contract": (
+                        item.contract.to_dict() if item.contract is not None else None
+                    ),
+                    "prepared_result": (
+                        item.immediate.to_dict() if item.immediate is not None else None
+                    ),
                 },
             )
 
     def recover_pending(
         self,
-        pending: Event,
+        pending: ActionRecord,
         executor: Executor,
         journal: Journal,
     ) -> ToolResult:
-        call = ToolCall.from_dict(pending.data["call"])
-        action_data = pending.data.get("action")
-        if not pending.data.get("authorized") or action_data is None:
-            result = ToolResult(call.id, False, error="INTERRUPTED_BEFORE_AUTHORIZATION")
-        else:
-            action = Action.from_dict(action_data)
-            current_revision = executor.snapshot().revision
-            baseline = pending.data.get("workspace_revision")
-            external = Capability.EXTERNAL_WRITE in action.capabilities
-            if action.idempotent or (not external and current_revision == baseline):
-                tool = self._tools.get(call.name)
-                if tool is None:
-                    result = ToolResult(call.id, False, error="UNKNOWN_TOOL")
-                else:
-                    result = self._execute(_Prepared(call, tool, action, None), ExecutionEnv(executor))
-            else:
-                result = ToolResult(
-                    call.id,
-                    False,
-                    output="Execution may already have produced a side effect; automatic replay is unsafe.",
-                    error="UNKNOWN_COMMIT",
-                )
-        journal.append(EventKind.TOOL_RESULT, {"result": result.to_dict(), "recovered": True})
+        tool = self._tools.get(pending.call.name)
+        contract = pending.contract
+        if contract is None and pending.action is not None:
+            contract = (
+                EffectContract.retry_safe()
+                if pending.action.idempotent or pending.action.read_only
+                else EffectContract.manual()
+            )
+        item = _Prepared(
+            pending.call,
+            tool,
+            pending.action,
+            pending.prepared_result,
+            pending.action_id,
+            contract,
+        )
+
+        if pending.prepared_result is not None:
+            self._commit(journal, item, pending.prepared_result, recovered="prepared")
+            return pending.prepared_result
+        if not pending.authorized or pending.action is None:
+            result = ToolResult(
+                pending.call.id,
+                False,
+                error="INTERRUPTED_BEFORE_AUTHORIZATION",
+            )
+            self._commit(journal, item, result, recovered="not_authorized")
+            return result
+        if tool is None:
+            result = ToolResult(pending.call.id, False, error="UNKNOWN_TOOL")
+            self._commit(journal, item, result, recovered="tool_missing")
+            return result
+
+        # Old journals did not have a durable started marker.  A non-idempotent
+        # call in that format is inherently ambiguous; pretending it was merely
+        # an unstarted intent would reintroduce blind replay.
+        if pending.legacy:
+            if pending.action.idempotent or pending.action.read_only:
+                return self._execute_and_commit(item, executor, journal, recovered=True)
+            result = self._unknown_commit(pending)
+            self._commit(journal, item, result, recovered="legacy_unknown")
+            return result
+
+        # A durable intent without TOOL_STARTED proves the executor never gained
+        # control, so even an opaque command may be started exactly once now.
+        if not pending.starts:
+            return self._execute_and_commit(item, executor, journal, recovered=True)
+
+        contract = item.contract or EffectContract.manual()
+        if contract.mode is RecoveryMode.RETRY_SAFE:
+            return self._execute_and_commit(item, executor, journal, recovered=True)
+        if contract.mode is RecoveryMode.MANUAL:
+            result = self._unknown_commit(pending)
+            self._commit(journal, item, result, recovered="manual_required")
+            return result
+
+        executor.discard_staged_writes(
+            pending.action_id,
+            tuple(condition.path for condition in contract.after),
+        )
+        state = contract.inspect(executor)
+        if state is EffectState.APPLIED:
+            result = ToolResult(
+                pending.call.id,
+                True,
+                output=(
+                    f"Recovered {pending.call.name}: its recorded file postcondition "
+                    "is already present."
+                ),
+                artifacts=(f"recovered:{pending.action_id}",),
+            )
+            self._commit(journal, item, result, recovered="effect_verified")
+            return result
+        if state is EffectState.NOT_APPLIED:
+            return self._execute_and_commit(item, executor, journal, recovered=True)
+
+        result = ToolResult(
+            pending.call.id,
+            False,
+            output=(
+                "The interrupted action's target matches neither its recorded precondition "
+                "nor postcondition. The harness will not overwrite the divergent state."
+            ),
+            error="RECOVERY_CONFLICT",
+        )
+        self._commit(journal, item, result, recovered="conflict")
         return result
 
     def _prepare(
@@ -210,23 +359,125 @@ class ToolRuntime:
             )
         return _Prepared(call, tool, action, None)
 
-    def _execute(self, item: _Prepared, env: ExecutionEnv) -> ToolResult:
+    def _settle(
+        self,
+        item: _Prepared,
+        executor: Executor,
+        journal: Journal,
+    ) -> ToolResult:
+        if item.immediate is not None:
+            self._commit(journal, item, item.immediate)
+            return item.immediate
+        return self._execute_and_commit(item, executor, journal)
+
+    def _execute_and_commit(
+        self,
+        item: _Prepared,
+        executor: Executor,
+        journal: Journal,
+        recovered: bool = False,
+    ) -> ToolResult:
         assert item.tool is not None and item.action is not None
-        before = env.executor.snapshot() if not item.action.read_only else None
+        assert item.action_id is not None
+        assert item.contract is not None
+
+        contract = item.contract
+        if contract.mode is RecoveryMode.VERIFY_FILES:
+            state = contract.inspect(executor)
+            if state is EffectState.APPLIED:
+                result = ToolResult(
+                    item.call.id,
+                    True,
+                    output=f"{item.tool.name}: requested file state is already present.",
+                )
+                self._commit(journal, item, result, recovered="already_satisfied")
+                return result
+            if state is EffectState.CONFLICT:
+                result = ToolResult(
+                    item.call.id,
+                    False,
+                    output="The target changed after the action was prepared; no write was attempted.",
+                    error="PRECONDITION_CHANGED",
+                )
+                self._commit(journal, item, result)
+                return result
+
+        before = executor.snapshot() if not item.action.read_only else None
+        journal.append(
+            EventKind.TOOL_STARTED,
+            {
+                "action_id": item.action_id,
+                "call_id": item.call.id,
+                "workspace_revision": before.revision if before is not None else None,
+                "recovery_attempt": recovered,
+            },
+        )
+        result = self._invoke(item, ExecutionEnv(executor, item.action_id))
+
+        if not result.ok and contract.mode is RecoveryMode.VERIFY_FILES:
+            state = contract.inspect(executor)
+            if state is EffectState.APPLIED:
+                result = ToolResult(
+                    item.call.id,
+                    True,
+                    output=(
+                        f"{item.tool.name} reported an error, but its durable "
+                        "postcondition was verified."
+                    ),
+                    artifacts=result.artifacts,
+                )
+            elif state is EffectState.CONFLICT:
+                result = ToolResult(
+                    item.call.id,
+                    False,
+                    output=(
+                        "Execution failed and the target now matches neither the "
+                        "recorded precondition nor postcondition."
+                    ),
+                    error="RECOVERY_CONFLICT",
+                    artifacts=result.artifacts,
+                )
+
+        observation: dict[str, Any] | None = None
+        if before is not None:
+            after = executor.snapshot()
+            changed = after.changed_since(before)
+            artifacts = tuple(
+                dict.fromkeys((*result.artifacts, *(f"changed:{path}" for path in changed)))
+            )
+            result = ToolResult(
+                result.call_id,
+                result.ok,
+                result.output,
+                result.error,
+                artifacts,
+            )
+            observation = {
+                "before_revision": before.revision,
+                "after_revision": after.revision,
+                "changed_paths": list(changed),
+            }
+        self._commit(
+            journal,
+            item,
+            result,
+            observation=observation,
+            recovered="retried" if recovered else None,
+        )
+        return result
+
+    def _invoke(self, item: _Prepared, env: ExecutionEnv) -> ToolResult:
+        assert item.tool is not None and item.action is not None
         attempts = 2 if item.action.idempotent else 1
         for attempt in range(attempts):
             try:
                 execution = item.tool.execute(item.call.arguments, env)
-                artifacts = list(execution.artifacts)
-                if before is not None:
-                    after = env.executor.snapshot()
-                    artifacts.extend(f"changed:{path}" for path in after.changed_since(before))
                 return ToolResult(
                     call_id=item.call.id,
                     ok=execution.ok,
                     output=execution.output,
                     error=execution.error,
-                    artifacts=tuple(dict.fromkeys(artifacts)),
+                    artifacts=execution.artifacts,
                 )
             except ExecutionError as exc:
                 if not (exc.retryable and attempt + 1 < attempts):
@@ -236,6 +487,37 @@ class ToolRuntime:
             except Exception as exc:  # noqa: BLE001
                 return ToolResult(item.call.id, False, output=str(exc), error="TOOL_CRASH")
         raise AssertionError("unreachable")
+
+    @staticmethod
+    def _commit(
+        journal: Journal,
+        item: _Prepared,
+        result: ToolResult,
+        observation: dict[str, Any] | None = None,
+        recovered: str | None = None,
+    ) -> None:
+        assert item.action_id is not None
+        journal.append(
+            EventKind.TOOL_RESULT,
+            {
+                "action_id": item.action_id,
+                "result": result.to_dict(),
+                "observation": observation,
+                "recovered": recovered,
+            },
+        )
+
+    @staticmethod
+    def _unknown_commit(pending: ActionRecord) -> ToolResult:
+        return ToolResult(
+            pending.call.id,
+            False,
+            output=(
+                "The action started before interruption, but its effect cannot be "
+                "verified safely. Automatic replay is unsafe, so it was not replayed."
+            ),
+            error="UNKNOWN_COMMIT",
+        )
 
 
 def _validate(schema: dict[str, Any], arguments: Any, path: str = "arguments") -> str | None:

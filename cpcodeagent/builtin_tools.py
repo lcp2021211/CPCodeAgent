@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import Any, ClassVar
 
 from .executor import ExecutionEnv, ExecutionError
+from .recovery import EffectContract, FileCondition, content_digest
 from .skills import SkillRegistry
 from .tools import Tool, ToolExecution, ToolRuntime
 from .types import Action, Capability
@@ -99,8 +100,26 @@ class WriteFileTool(Tool):
         target = env.executor.resolve(arguments["path"])
         return Action(frozenset({Capability.WORKSPACE_WRITE}), (f"file:{target}",), False)
 
+    def effect_contract(
+        self,
+        arguments: dict[str, Any],
+        action: Action,
+        env: ExecutionEnv,
+        action_id: str,
+    ) -> EffectContract:
+        target = env.executor.resolve(arguments["path"])
+        relative = target.relative_to(env.workspace).as_posix()
+        return EffectContract.file_transition(
+            FileCondition(relative, env.executor.file_digest(relative)),
+            FileCondition(relative, content_digest(arguments["content"])),
+        )
+
     def execute(self, arguments: dict[str, Any], env: ExecutionEnv) -> ToolExecution:
-        env.executor.write_text(arguments["path"], arguments["content"])
+        env.executor.write_text(
+            arguments["path"],
+            arguments["content"],
+            operation_id=env.action_id,
+        )
         return ToolExecution(True, f"Wrote {arguments['path']}")
 
 
@@ -121,6 +140,30 @@ class EditFileTool(Tool):
         target = env.executor.resolve(arguments["path"])
         return Action(frozenset({Capability.WORKSPACE_WRITE}), (f"file:{target}",), False)
 
+    def effect_contract(
+        self,
+        arguments: dict[str, Any],
+        action: Action,
+        env: ExecutionEnv,
+        action_id: str,
+    ) -> EffectContract:
+        path = env.executor.resolve(arguments["path"])
+        if not path.is_file():
+            raise ExecutionError("NOT_FOUND", f"File does not exist: {arguments['path']}")
+        original = path.read_text(encoding="utf-8")
+        count = original.count(arguments["old"])
+        if count != 1:
+            raise ExecutionError(
+                "AMBIGUOUS_EDIT",
+                f"Expected old text exactly once, found {count} occurrences.",
+            )
+        relative = path.relative_to(env.workspace).as_posix()
+        updated = original.replace(arguments["old"], arguments["new"], 1)
+        return EffectContract.file_transition(
+            FileCondition(relative, content_digest(original)),
+            FileCondition(relative, content_digest(updated)),
+        )
+
     def execute(self, arguments: dict[str, Any], env: ExecutionEnv) -> ToolExecution:
         path = env.executor.resolve(arguments["path"])
         if not path.is_file():
@@ -134,7 +177,11 @@ class EditFileTool(Tool):
                 "AMBIGUOUS_EDIT",
             )
         updated = original.replace(arguments["old"], arguments["new"], 1)
-        env.executor.write_text(arguments["path"], updated)
+        env.executor.write_text(
+            arguments["path"],
+            updated,
+            operation_id=env.action_id,
+        )
         diff = "".join(
             difflib.unified_diff(
                 original.splitlines(keepends=True),
