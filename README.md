@@ -15,9 +15,10 @@ maximize framework surface area, but to make four difficult properties explicit:
 Session
    ├── Turn 1        INPUT → THINK → ACT → CHECK → FINAL
    ├── Turn 2        INPUT → THINK → ACT → CHECK → FINAL
-   └── Journal       append-only history, checkpoints, recovery
+   ├── Memory        USER.md + sessions/<session-id>.md
+   └── Journal       append-only history, memory snapshots, recovery
           │
-          ├── Context       replay projection, compaction, active skill
+          ├── Context       pinned memory + compacted history + active skill
           └── ActionRuntime classify → policy → intent → start → commit
                                       └── recovery contract → reconcile
 ```
@@ -30,8 +31,9 @@ multi-agent layer. Extension happens through a few direct interfaces: `Model`, `
 
 1. `Harness` creates a session with a fixed workspace and policy, then appends one user
    input for each turn.
-2. `ContextEngine` derives a model view from the journal. Old history may become a
-   deterministic memory snapshot, while the original events stay intact.
+2. `MemoryManager` snapshots bounded user/session Markdown memory into the journal;
+   `ContextEngine` pins that version ahead of recent history. Old conversation history may
+   become a deterministic compaction snapshot, while the original events stay intact.
 3. The model returns text and/or `ToolCall` values.
 4. Every tool first runs `classify(arguments) -> Action`. The action contains only its
    required capabilities, concrete targets, and idempotency.
@@ -52,6 +54,7 @@ cpcodeagent/
   kernel.py          four-state run loop and budgets
   session.py         session identity, turn projection, safe journal lookup
   context.py         replayable context views and deterministic compaction
+  memory.py          bounded user/session Markdown memory and journal snapshots
   skills.py          SKILL.md discovery and progressive loading
   tools.py           Tool contract and barrier scheduler
   builtin_tools.py   small workspace coding toolset
@@ -83,6 +86,35 @@ requires-tools: [read_file, search_text, edit_file, run_command]
 
 Reproduce the failure, trace the smallest relevant path, make a focused change, and verify it.
 ```
+
+## Layered persistent memory
+
+Memory is deliberately file-based and has only two scopes:
+
+```text
+~/.cpcodeagent/memory/USER.md                  shared by all sessions
+~/.cpcodeagent/memory/sessions/<session-id>.md isolated to one session
+```
+
+Successful turns upsert one bounded `turn-*` summary into session memory. Explicit notes
+use stable content-derived `note-*` keys. User memory is never inferred from repository or
+tool output; it changes only through an explicit terminal command:
+
+```text
+/memory [user|session]
+/remember user Prefer pytest for Python tests.
+/remember session The migration must remain backward compatible.
+/forget user note-0123456789ab
+/forget session all
+```
+
+User memory is capped at 8 KB and session memory at 12 KB. When session memory fills, old
+automatic turn summaries are removed before explicit notes. Before each model request, the
+current documents are snapshotted into the append-only journal. This makes the precise
+memory version replayable while keeping the Markdown files directly inspectable and
+editable; managed entries use `## <key>` headings, and free-form text is preserved as a
+`manual` entry on the next update. Persistent memory is treated as fallible context and
+cannot expand policy or override system instructions.
 
 ## Failure semantics
 
@@ -174,6 +206,7 @@ CPCODEAGENT_WORKSPACE=.
 CPCODEAGENT_EXECUTOR=local
 CPCODEAGENT_DOCKER_IMAGE=python:3.12-slim
 CPCODEAGENT_JOURNAL_DIR=~/.cpcodeagent/runs
+CPCODEAGENT_MEMORY_DIR=~/.cpcodeagent/memory
 
 CPCODEAGENT_MAX_STEPS=40
 CPCODEAGENT_MAX_SECONDS=1800
@@ -182,8 +215,8 @@ CPCODEAGENT_VERIFY=
 ```
 
 `OPENAI_BASE_URL` makes the same adapter usable with OpenAI-compatible providers. A
-resumed session still restores its original workspace, policy, and executor; model and
-per-turn budget values are read when the CLI starts.
+resumed session still restores its original workspace, policy, executor, and memory
+directory; model and per-turn budget values are read when the CLI starts.
 
 The interactive shell keeps one session open until `/exit` or EOF:
 
@@ -228,7 +261,7 @@ starts with immutable workspace, policy, and executor metadata, then stores any 
 sequential turns. Resume restores those boundaries instead of silently falling back to a
 different permission set or executor.
 Every turn has its own step/token/time budget. Context compaction affects only the model
-view; raw events remain available for audit and replay.
+view; persistent memory stays pinned, and raw events remain available for audit and replay.
 
 Run the offline example and tests without an API key:
 

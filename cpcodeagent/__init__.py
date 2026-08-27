@@ -4,6 +4,7 @@ from .context import ContextEngine
 from .executor import DockerExecutor, LocalExecutor
 from .journal import Journal
 from .kernel import Harness
+from .memory import MemoryDelta, MemoryEntry, MemoryManager, MemoryScope, MemoryStore
 from .model import OpenAICompatibleModel, ResilientModel, ScriptedModel
 from .policy import RunPolicy
 from .recovery import ActionLedger, ActionState, EffectContract, EffectState, RecoveryMode
@@ -23,6 +24,11 @@ __all__ = [
     "Harness",
     "Journal",
     "LocalExecutor",
+    "MemoryDelta",
+    "MemoryEntry",
+    "MemoryManager",
+    "MemoryScope",
+    "MemoryStore",
     "OpenAICompatibleModel",
     "RecoveryMode",
     "ResilientModel",

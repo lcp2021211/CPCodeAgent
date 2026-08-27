@@ -14,6 +14,7 @@ from .builtin_tools import build_default_runtime
 from .context import ContextEngine
 from .executor import DockerExecutor, LocalExecutor
 from .kernel import Harness
+from .memory import MemoryManager, MemoryScope, MemoryStore
 from .model import OpenAICompatibleModel, ResilientModel
 from .policy import RunPolicy
 from .session import Session, SessionState, SessionStore
@@ -81,6 +82,11 @@ def build_parser() -> argparse.ArgumentParser:
             "CPCODEAGENT_JOURNAL_DIR", str(Path.home() / ".cpcodeagent" / "runs")
         ),
     )
+    parser.add_argument(
+        "--memory-dir",
+        default=os.getenv("CPCODEAGENT_MEMORY_DIR") or None,
+        help="User/session Markdown memory directory",
+    )
     return parser
 
 
@@ -110,6 +116,11 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("Set OPENAI_API_KEY or pass --api-key")
 
     journal_dir = Path(args.journal_dir).expanduser().resolve()
+    configured_memory_dir = (
+        Path(args.memory_dir).expanduser().resolve()
+        if args.memory_dir
+        else journal_dir.parent / "memory"
+    )
     store = SessionStore(journal_dir)
     if args.resume:
         try:
@@ -119,12 +130,20 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(str(exc)) from exc
         workspace = _resume_workspace(args.workspace, state)
         policy = _resume_policy(args, state)
+        if state.memory_root is not None:
+            stored_memory_dir = Path(state.memory_root).expanduser().resolve()
+            if args.memory_dir is not None and configured_memory_dir != stored_memory_dir:
+                raise SystemExit("A session restores its original memory directory")
+            memory_dir = stored_memory_dir
+        else:
+            memory_dir = configured_memory_dir
     else:
         session = store.create()
         workspace = Path(
             args.workspace or os.getenv("CPCODEAGENT_WORKSPACE", ".")
         ).expanduser().resolve()
         policy = _new_policy(args)
+        memory_dir = configured_memory_dir
 
     executor = _build_executor(args, workspace, state if args.resume else None)
     if not executor.hard_sandbox:
@@ -138,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     roots.append(Path.home() / ".cpcodeagent" / "skills")
     skills = SkillRegistry(roots)
     tools = build_default_runtime(skills)
+    memory = MemoryManager(MemoryStore(memory_dir, session.session_id))
 
     primary = OpenAICompatibleModel(args.model, args.api_key, args.base_url)
     fallback = (
@@ -157,6 +177,7 @@ def main(argv: list[str] | None = None) -> int:
         verifier=verifier,
         limits=RunLimits(args.max_steps, args.max_seconds, args.max_tokens),
         event_sink=ui.handle,
+        memory=memory,
     )
 
     if args.resume:
@@ -195,7 +216,7 @@ def interactive_loop(
     else:
         output_fn(f"CPCodeAgent session: {session.session_id}")
         output_fn(f"Workspace: {state.workspace or executor.workspace}")
-        output_fn("Commands: /status, /help, /exit")
+        output_fn("Commands: /status, /memory, /remember, /forget, /help, /exit")
 
     while True:
         try:
@@ -212,7 +233,9 @@ def interactive_loop(
             return 0
         if message == "/help":
             _message(
-                "/status shows session state; /exit saves and leaves the session.",
+                "/status shows session state; /memory shows persistent memory; "
+                "/remember <user|session> <text> saves a note; "
+                "/forget <user|session> <key|all> removes notes; /exit saves and leaves.",
                 output_fn,
                 ui,
             )
@@ -230,6 +253,12 @@ def interactive_loop(
                 output_fn,
                 ui,
             )
+            continue
+        if message == "/memory" or message.startswith("/memory "):
+            _handle_memory_command(message, harness, session, output_fn, ui)
+            continue
+        if message.startswith(("/remember ", "/forget ")):
+            _handle_memory_command(message, harness, session, output_fn, ui)
             continue
         if message.startswith("/"):
             _message(f"Unknown command: {message}. Use /help.", output_fn, ui)
@@ -251,6 +280,58 @@ def interactive_loop(
                 output_fn(f"Session error: {exc}")
             continue
         _print_outcome(outcome, output_fn=output_fn, ui=ui)
+
+
+def _handle_memory_command(
+    message: str,
+    harness: Harness,
+    session: Session,
+    output_fn: Callable[[str], None],
+    ui: TerminalUI | None,
+) -> None:
+    manager = harness.memory
+    if manager is None:
+        _message("Persistent memory is not configured.", output_fn, ui)
+        return
+    parts = message.split(maxsplit=2)
+    command = parts[0]
+    try:
+        if command == "/memory":
+            scope = parts[1] if len(parts) > 1 else "all"
+            if scope not in {"all", MemoryScope.USER.value, MemoryScope.SESSION.value}:
+                raise ValueError("Usage: /memory [user|session]")
+            documents: list[str] = []
+            if scope in {"all", MemoryScope.USER.value}:
+                documents.append(manager.store.read(MemoryScope.USER) or "# User Memory\n\n(empty)")
+            if scope in {"all", MemoryScope.SESSION.value}:
+                documents.append(
+                    manager.store.read(MemoryScope.SESSION) or "# Session Memory\n\n(empty)"
+                )
+            _message("\n\n".join(documents), output_fn, ui)
+            return
+
+        if len(parts) < 3:
+            raise ValueError(f"Usage: {command} <user|session> <text|key|all>")
+        scope = MemoryScope(parts[1])
+        value = parts[2].strip()
+        if command == "/remember":
+            key = manager.remember(scope, value, session.journal)
+            manager.snapshot(session.journal)
+            _message(f"Remembered {scope.value} memory as {key}.", output_fn, ui)
+            return
+        if command == "/forget":
+            changed = manager.forget(
+                scope,
+                None if value == "all" else value,
+                session.journal,
+            )
+            manager.snapshot(session.journal)
+            suffix = "removed" if changed else "not found"
+            _message(f"Memory {suffix}.", output_fn, ui)
+            return
+        raise ValueError("Unknown memory command")
+    except (OSError, ValueError) as exc:
+        _message(f"Memory error: {exc}", output_fn, ui)
 
 
 def _new_policy(args: argparse.Namespace) -> RunPolicy:

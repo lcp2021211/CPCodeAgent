@@ -37,6 +37,7 @@ class SessionState:
     workspace: str | None
     policy: dict[str, Any] | None
     executor: dict[str, Any] | None
+    memory_root: str | None
     turns: tuple[TurnState, ...]
 
     @property
@@ -64,6 +65,7 @@ class SessionState:
         workspace: str | None = None
         policy: dict[str, Any] | None = None
         executor: dict[str, Any] | None = None
+        memory_root: str | None = None
         if start is not None:
             session_id = str(start.data["session_id"])
             workspace = start.data.get("workspace")
@@ -73,6 +75,9 @@ class SessionState:
             raw_executor = start.data.get("executor")
             if isinstance(raw_executor, dict):
                 executor = dict(raw_executor)
+            raw_memory_root = start.data.get("memory_root")
+            if isinstance(raw_memory_root, str):
+                memory_root = raw_memory_root
 
         mutable_turns: list[dict[str, Any]] = []
         for event in journal.events:
@@ -105,7 +110,7 @@ class SessionState:
         if not session_id:
             raise ValueError("Journal has no session identity")
         turns = tuple(TurnState(**turn) for turn in mutable_turns)
-        return cls(str(session_id), workspace, policy, executor, turns)
+        return cls(str(session_id), workspace, policy, executor, memory_root, turns)
 
 
 @dataclass(frozen=True)

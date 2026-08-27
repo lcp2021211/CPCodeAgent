@@ -15,6 +15,8 @@ from typing import Any
 
 class EventKind(str, Enum):
     SESSION_START = "session_start"
+    MEMORY_SNAPSHOT = "memory_snapshot"
+    MEMORY_UPDATE = "memory_update"
     INPUT = "input"
     MODEL_RESPONSE = "model_response"
     TOOL_CALL = "tool_call"

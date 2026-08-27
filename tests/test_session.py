@@ -29,6 +29,7 @@ class SessionTests(unittest.TestCase):
                 "CPCODEAGENT_MAX_SECONDS=12.5\n"
                 "CPCODEAGENT_MAX_TOKENS=9000\n"
                 "CPCODEAGENT_JOURNAL_DIR=/tmp/env-journals\n"
+                "CPCODEAGENT_MEMORY_DIR=/tmp/env-memory\n"
             )
             with patch.dict(os.environ, {"OPENAI_API_KEY": "shell-key"}, clear=True):
                 loaded = load_environment(env_file)
@@ -43,6 +44,7 @@ class SessionTests(unittest.TestCase):
                 self.assertEqual(args.max_seconds, 12.5)
                 self.assertEqual(args.max_tokens, 9000)
                 self.assertEqual(args.journal_dir, "/tmp/env-journals")
+                self.assertEqual(args.memory_dir, "/tmp/env-memory")
 
     def test_multiple_turns_share_context_but_reset_turn_budget(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

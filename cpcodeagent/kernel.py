@@ -11,6 +11,7 @@ from pathlib import Path
 from .context import ContextEngine
 from .executor import Executor
 from .journal import EventKind, Journal
+from .memory import MemoryManager
 from .model import ContextOverflowError, Model, ModelError
 from .policy import Approver, RejectingApprover, RunPolicy
 from .recovery import ActionLedger, ActionRecord
@@ -44,6 +45,7 @@ class Harness:
         verifier: Verifier | None = None,
         limits: RunLimits | None = None,
         event_sink: RunEventSink | None = None,
+        memory: MemoryManager | None = None,
     ):
         self.model = model
         self.tools = tools
@@ -54,6 +56,7 @@ class Harness:
         self.verifier = verifier
         self.limits = limits or RunLimits()
         self.event_sink = event_sink
+        self.memory = memory
 
     def run(
         self,
@@ -83,8 +86,17 @@ class Harness:
                 raise ValueError(
                     f"Journal belongs to session {state.session_id}, not {session_id}"
                 )
+            if self.memory is not None and self.memory.store.session_id != state.session_id:
+                raise ValueError(
+                    f"Memory belongs to session {self.memory.store.session_id}, "
+                    f"not {state.session_id}"
+                )
             return state.session_id
         session_id = session_id or uuid.uuid4().hex[:12]
+        if self.memory is not None and self.memory.store.session_id != session_id:
+            raise ValueError(
+                f"Memory belongs to session {self.memory.store.session_id}, not {session_id}"
+            )
         journal.append(
             EventKind.SESSION_START,
             {
@@ -92,6 +104,9 @@ class Harness:
                 "workspace": str(executor.workspace),
                 "policy": self.policy.to_dict(),
                 "executor": self._executor_boundary(executor),
+                "memory_root": (
+                    str(self.memory.store.root) if self.memory is not None else None
+                ),
             },
         )
         return session_id
@@ -142,6 +157,12 @@ class Harness:
             raise ValueError("Session policy cannot change between turns")
         if state.executor is not None and state.executor != self._executor_boundary(executor):
             raise ValueError("Session executor cannot change between turns")
+        if (
+            self.memory is not None
+            and state.memory_root is not None
+            and Path(state.memory_root).expanduser().resolve() != self.memory.store.root
+        ):
+            raise ValueError("Session memory directory cannot change between turns")
 
     @staticmethod
     def _executor_boundary(executor: Executor) -> dict[str, str]:
@@ -269,6 +290,7 @@ class Harness:
                     turn_id,
                 )
 
+            self._snapshot_memory(journal)
             view = self.context.build(
                 journal,
                 task,
@@ -506,6 +528,24 @@ class Harness:
         progress: RunProgress,
         turn_id: str,
     ) -> RunOutcome:
+        if self.memory is not None and status is RunStatus.SUCCEEDED:
+            state = SessionState.from_journal(journal, run_id)
+            turn = state.active_turn
+            request = turn.content if turn is not None else ""
+            try:
+                self.memory.record_turn(turn_id, request, answer, journal)
+                self.memory.snapshot(journal)
+            except (OSError, ValueError) as exc:
+                journal.append(
+                    EventKind.MEMORY_UPDATE,
+                    {
+                        "scope": "session",
+                        "keys": [turn_id],
+                        "source": "turn_summary",
+                        "ok": False,
+                        "error": str(exc),
+                    },
+                )
         data = {
             "run_id": run_id,
             "status": status.value,
@@ -516,6 +556,23 @@ class Harness:
         }
         journal.append(EventKind.FINAL, data)
         return self._outcome_from_final(data, journal)
+
+    def _snapshot_memory(self, journal: Journal) -> None:
+        if self.memory is None:
+            return
+        try:
+            self.memory.snapshot(journal)
+        except OSError as exc:
+            journal.append(
+                EventKind.MEMORY_UPDATE,
+                {
+                    "scope": "all",
+                    "keys": [],
+                    "source": "context_snapshot",
+                    "ok": False,
+                    "error": str(exc),
+                },
+            )
 
     @staticmethod
     def _outcome_from_final(data: dict, journal: Journal) -> RunOutcome:
