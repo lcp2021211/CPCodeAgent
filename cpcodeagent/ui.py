@@ -29,7 +29,7 @@ class TerminalUI:
             f"[bold cyan]CPCodeAgent[/bold cyan]  [dim]session {state.session_id}[/dim]\n"
             f"Model: [magenta]{model}[/magenta]   Executor: [cyan]{executor}[/cyan]\n"
             f"Workspace: [dim]{state.workspace or '.'}[/dim]\n"
-            "[dim]/status  /help  /exit[/dim]"
+            "[dim]/status  /memory  /remember  /forget  /help  /exit[/dim]"
         )
         self.console.print(Panel(body, border_style="blue", expand=False))
 
