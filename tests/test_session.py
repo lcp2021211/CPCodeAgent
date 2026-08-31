@@ -28,6 +28,7 @@ class SessionTests(unittest.TestCase):
                 "CPCODEAGENT_MAX_STEPS=7\n"
                 "CPCODEAGENT_MAX_SECONDS=12.5\n"
                 "CPCODEAGENT_MAX_TOKENS=9000\n"
+                "CPCODEAGENT_CONTEXT_WINDOW_TOKENS=32000\n"
                 "CPCODEAGENT_JOURNAL_DIR=/tmp/env-journals\n"
                 "CPCODEAGENT_MEMORY_DIR=/tmp/env-memory\n"
             )
@@ -43,6 +44,7 @@ class SessionTests(unittest.TestCase):
                 self.assertEqual(args.max_steps, 7)
                 self.assertEqual(args.max_seconds, 12.5)
                 self.assertEqual(args.max_tokens, 9000)
+                self.assertEqual(args.context_window_tokens, 32000)
                 self.assertEqual(args.journal_dir, "/tmp/env-journals")
                 self.assertEqual(args.memory_dir, "/tmp/env-memory")
 

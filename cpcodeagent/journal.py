@@ -17,6 +17,7 @@ class EventKind(str, Enum):
     SESSION_START = "session_start"
     MEMORY_SNAPSHOT = "memory_snapshot"
     MEMORY_UPDATE = "memory_update"
+    CONTEXT_COMPACTION = "context_compaction"
     INPUT = "input"
     MODEL_RESPONSE = "model_response"
     TOOL_CALL = "tool_call"
@@ -66,6 +67,13 @@ class Journal:
         with self._lock:
             return tuple(self._events)
 
+    @property
+    def last_seq(self) -> int:
+        """Sequence boundary without copying the complete event history."""
+
+        with self._lock:
+            return len(self._events) - 1
+
     def append(self, kind: EventKind, data: dict[str, Any]) -> Event:
         with self._lock:
             event = Event(seq=len(self._events), time=time.time(), kind=kind, data=data)
@@ -86,6 +94,12 @@ class Journal:
         return tuple(
             event for event in self.events if event.kind is kind and event.seq > after_seq
         )
+
+    def after(self, seq: int) -> tuple[Event, ...]:
+        """Return only events newer than ``seq`` for incremental projections."""
+
+        with self._lock:
+            return tuple(self._events[seq + 1 :])
 
     def last(self, kind: EventKind, after_seq: int = -1) -> Event | None:
         for event in reversed(self.events):

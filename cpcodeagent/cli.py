@@ -77,6 +77,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.getenv("CPCODEAGENT_MAX_TOKENS", "200000"),
     )
     parser.add_argument(
+        "--context-window-tokens",
+        type=int,
+        default=os.getenv("CPCODEAGENT_CONTEXT_WINDOW_TOKENS", "128000"),
+        help="Provider context window used by the 50/70/90%% compression policy",
+    )
+    parser.add_argument(
         "--journal-dir",
         default=os.getenv(
             "CPCODEAGENT_JOURNAL_DIR", str(Path.home() / ".cpcodeagent" / "runs")
@@ -170,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
     harness = Harness(
         model=model,
         tools=tools,
-        context=ContextEngine(),
+        context=ContextEngine(max_context_tokens=args.context_window_tokens),
         skills=skills,
         policy=policy,
         approver=ui,

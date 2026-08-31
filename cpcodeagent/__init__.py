@@ -1,6 +1,6 @@
 """CPCodeAgent: a compact, replayable coding-agent harness."""
 
-from .context import ContextEngine
+from .context import ContextEngine, ContextState
 from .executor import DockerExecutor, LocalExecutor
 from .journal import Journal
 from .kernel import Harness
@@ -18,6 +18,7 @@ __all__ = [
     "ActionLedger",
     "ActionState",
     "ContextEngine",
+    "ContextState",
     "DockerExecutor",
     "EffectContract",
     "EffectState",
