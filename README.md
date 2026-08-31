@@ -32,8 +32,9 @@ multi-agent layer. Extension happens through a few direct interfaces: `Model`, `
 1. `Harness` creates a session with a fixed workspace and policy, then appends one user
    input for each turn.
 2. `MemoryManager` snapshots bounded user/session Markdown memory into the journal;
-   `ContextEngine` pins that version ahead of recent history. Old conversation history may
-   become a deterministic compaction snapshot, while the original events stay intact.
+   `ContextEngine` pins that version ahead of recent history. A disposable `ContextState`
+   consumes only Journal events newer than its `projected_seq`; startup, recovery, and
+   context-overflow retry rebuild it from the complete Journal.
 3. The model returns text and/or `ToolCall` values.
 4. Every tool first runs `classify(arguments) -> Action`. The action contains only its
    required capabilities, concrete targets, and idempotency.
@@ -47,13 +48,35 @@ multi-agent layer. Extension happens through a few direct interfaces: `Model`, `
 9. A final model answer passes through one optional `Verifier` before the turn succeeds.
    The next user message starts a new turn with fresh budgets and the same durable history.
 
+## Incremental and layered context
+
+The Journal is cold durable state; `ContextState` is a hot, disposable projection:
+
+```text
+normal step:  Journal.after(projected_seq) → ContextState → ContextView → model
+recovery:     complete Journal             → ContextState → ContextView → model
+```
+
+Context pressure retreats in three increasingly expensive layers. At 50% of the configured
+window, verbose tool results are mechanically shortened in the hot view without a model call.
+At 70%, the model summarizes older complete interaction blocks while the latest four blocks
+remain verbatim. At 90%, an emergency summary folds the previous summary and all but the
+latest two blocks into a tighter continuation state. Raw inputs and tool results are never
+rewritten.
+
+Semantic summaries are appended as small `CONTEXT_COMPACTION` events with their Journal
+boundary. Recovery therefore replays the exact accepted summary instead of paying for a new
+one or allowing summary drift. Configure the model window with
+`CPCODEAGENT_CONTEXT_WINDOW_TOKENS`; token estimates use a dependency-free mixed-language
+approximation.
+
 ## Package layout
 
 ```text
 cpcodeagent/
   kernel.py          four-state run loop and budgets
   session.py         session identity, turn projection, safe journal lookup
-  context.py         replayable context views and deterministic compaction
+  context.py         incremental hot context and replayable layered compaction
   memory.py          bounded user/session Markdown memory and journal snapshots
   skills.py          SKILL.md discovery and progressive loading
   tools.py           Tool contract and barrier scheduler

@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from cpcodeagent.builtin_tools import build_default_runtime
+from cpcodeagent.context import ContextEngine
 from cpcodeagent.executor import LocalExecutor
 from cpcodeagent.journal import EventKind, Journal
 from cpcodeagent.kernel import Harness
@@ -20,7 +21,43 @@ class FileVerifier(Verifier):
         return Verification(target.read_text() == "answer = 42\n", "answer.py has wrong content")
 
 
+class CountingContextEngine(ContextEngine):
+    def __init__(self):
+        super().__init__()
+        self.rebuild_calls = 0
+
+    def rebuild(self, journal):
+        self.rebuild_calls += 1
+        return super().rebuild(journal)
+
+
 class HarnessTests(unittest.TestCase):
+    def test_normal_agent_steps_reuse_one_hot_context_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            context = CountingContextEngine()
+            model = ScriptedModel(
+                [
+                    ModelResponse(
+                        tool_calls=(
+                            ToolCall(
+                                "write-hot",
+                                "write_file",
+                                {"path": "hot.txt", "content": "hot\n"},
+                            ),
+                        )
+                    ),
+                    ModelResponse(content="Done."),
+                ]
+            )
+            harness = Harness(model, build_default_runtime(), context=context)
+
+            outcome = harness.run(
+                "Create hot.txt", LocalExecutor(directory), Journal(), "hot-context"
+            )
+
+            self.assertEqual(outcome.status, RunStatus.SUCCEEDED)
+            self.assertEqual(context.rebuild_calls, 1)
+
     def test_end_to_end_write_verify_and_replay(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
