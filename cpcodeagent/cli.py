@@ -19,6 +19,7 @@ from .model import OpenAICompatibleModel, ResilientModel
 from .policy import RunPolicy
 from .session import Session, SessionState, SessionStore
 from .skills import SkillRegistry
+from .subagents import DelegateTaskTool, SubagentRunner
 from .types import Decision, RunLimits, RunOutcome
 from .ui import TerminalUI
 from .verifier import CommandVerifier
@@ -162,7 +163,6 @@ def main(argv: list[str] | None = None) -> int:
     roots.extend(Path(path) for path in args.skill_dir)
     roots.append(Path.home() / ".cpcodeagent" / "skills")
     skills = SkillRegistry(roots)
-    tools = build_default_runtime(skills)
     memory = MemoryManager(MemoryStore(memory_dir, session.session_id))
 
     primary = OpenAICompatibleModel(args.model, args.api_key, args.base_url)
@@ -172,6 +172,14 @@ def main(argv: list[str] | None = None) -> int:
         else None
     )
     model = ResilientModel(primary, fallback)
+    subagents = SubagentRunner(
+        model,
+        journal_dir / "_subagents" / session.session_id,
+        skills,
+        max_context_tokens=min(args.context_window_tokens, 64_000),
+    )
+    tools = build_default_runtime(skills)
+    tools.register(DelegateTaskTool(subagents))
     verifier = CommandVerifier(shlex.split(args.verify)) if args.verify else None
     harness = Harness(
         model=model,

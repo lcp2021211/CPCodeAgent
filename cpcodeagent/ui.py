@@ -127,11 +127,14 @@ class TerminalUI:
                 continue
             count += 1
             self._tool_names[call.id] = call.name
-            detail = (
-                "updating execution plan"
-                if call.name == "plan_write"
-                else _brief(call.arguments)
-            )
+            if call.name == "plan_write":
+                detail = "updating execution plan"
+            elif call.name == "delegate_task":
+                mode = str(call.arguments.get("mode", "inspect"))
+                task = _one_line(str(call.arguments.get("task", "")), 90)
+                detail = f"[sub:{mode}] {task}"
+            else:
+                detail = _brief(call.arguments)
             self.console.print(
                 f"[cyan]▸ {call.name}[/cyan] [dim]{detail}[/dim]"
             )
@@ -155,6 +158,17 @@ class TerminalUI:
                             border_style="cyan",
                             expand=False,
                         )
+                    )
+                    continue
+                if name == "delegate_task":
+                    try:
+                        payload = json.loads(result.output)
+                    except (TypeError, ValueError):
+                        payload = {}
+                    status = str(payload.get("status", "completed"))
+                    summary = str(payload.get("summary", result.output))
+                    self.console.print(
+                        f"[green]✓ subagent {status}[/green] [dim]{_one_line(summary)}[/dim]"
                     )
                     continue
                 detail = _one_line(result.output)
