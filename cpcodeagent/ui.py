@@ -8,6 +8,7 @@ from typing import Any
 from rich.console import Console
 from rich.panel import Panel
 from rich.status import Status
+from rich.text import Text
 
 from .session import SessionState
 from .types import Action, RunEvent, RunEventKind, RunOutcome, RunStatus, ToolCall
@@ -126,8 +127,13 @@ class TerminalUI:
                 continue
             count += 1
             self._tool_names[call.id] = call.name
+            detail = (
+                "updating execution plan"
+                if call.name == "plan_write"
+                else _brief(call.arguments)
+            )
             self.console.print(
-                f"[cyan]▸ {call.name}[/cyan] [dim]{_brief(call.arguments)}[/dim]"
+                f"[cyan]▸ {call.name}[/cyan] [dim]{detail}[/dim]"
             )
         if count:
             label = "tool" if count == 1 else "tools"
@@ -141,6 +147,16 @@ class TerminalUI:
         for result in results:
             name = self._tool_names.get(result.call_id, result.call_id)
             if result.ok:
+                if name == "plan_write":
+                    self.console.print(
+                        Panel(
+                            Text(result.output),
+                            title="✓ execution plan",
+                            border_style="cyan",
+                            expand=False,
+                        )
+                    )
+                    continue
                 detail = _one_line(result.output)
                 suffix = f" [dim]{detail}[/dim]" if detail else ""
                 self.console.print(f"[green]✓ {name}[/green]{suffix}")

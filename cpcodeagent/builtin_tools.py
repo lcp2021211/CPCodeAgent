@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import Any, ClassVar
 
 from .executor import ExecutionEnv, ExecutionError
+from .planning import PlanState, validate_plan_items
 from .recovery import EffectContract, FileCondition, content_digest
 from .skills import SkillRegistry
 from .tools import Tool, ToolExecution, ToolRuntime
@@ -85,6 +86,48 @@ class SearchTextTool(Tool):
             int(arguments.get("limit", 200)),
         )
         return ToolExecution(True, "\n".join(hits) if hits else "(no matches)")
+
+
+class PlanWriteTool(Tool):
+    name = "plan_write"
+    description = (
+        "Create or update the complete execution plan for a complex task. Use 3-8 "
+        "verifiable steps, keep at most one in_progress, and update statuses as work proceeds."
+    )
+    input_schema: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "text": {"type": "string"},
+                        "status": {
+                            "type": "string",
+                            "enum": ["pending", "in_progress", "completed"],
+                        },
+                    },
+                    "required": ["id", "text", "status"],
+                },
+            }
+        },
+        "required": ["items"],
+    }
+
+    def classify(self, arguments: dict[str, Any], env: ExecutionEnv) -> Action:
+        validate_plan_items(arguments["items"])
+        return Action(
+            frozenset({Capability.RUNTIME_WRITE}),
+            ("runtime:current-plan",),
+            True,
+        )
+
+    def execute(self, arguments: dict[str, Any], env: ExecutionEnv) -> ToolExecution:
+        items = validate_plan_items(arguments["items"])
+        plan = PlanState("current", items, updated_seq=-1, updated_step=0)
+        return ToolExecution(True, plan.render())
 
 
 class WriteFileTool(Tool):
@@ -292,6 +335,7 @@ def build_default_runtime(skills: SkillRegistry | None = None) -> ToolRuntime:
             ReadFileTool(),
             ListFilesTool(),
             SearchTextTool(),
+            PlanWriteTool(),
             WriteFileTool(),
             EditFileTool(),
             RunCommandTool(),

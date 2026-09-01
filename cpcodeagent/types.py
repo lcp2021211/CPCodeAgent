@@ -10,6 +10,7 @@ from typing import Any
 
 class Capability(str, Enum):
     READ = "read"
+    RUNTIME_WRITE = "runtime_write"
     WORKSPACE_WRITE = "workspace_write"
     NETWORK = "network"
     EXTERNAL_WRITE = "external_write"
