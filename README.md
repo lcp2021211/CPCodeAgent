@@ -1,13 +1,15 @@
 # CPCodeAgent
 
 CPCodeAgent is a compact coding-agent harness implemented in Python. Its goal is not to
-maximize framework surface area, but to make four difficult properties explicit:
+maximize framework surface area, but to make five difficult properties explicit:
 
 1. a session is a durable sequence of turns, while model context is only a replayable view;
 2. one semantic `Action` classification drives scheduling, permission, and retry;
 3. read calls may run concurrently while side effects cross deterministic barriers;
 4. every side effect follows a durable intent/start/commit protocol, so interrupted
    actions are reconciled from evidence and never replayed blindly.
+5. complex turns can maintain a visible, crash-recoverable execution plan that stays
+   pinned even when older conversation history is compressed.
 
 ## Architecture
 
@@ -18,7 +20,7 @@ Session
    ├── Memory        USER.md + sessions/<session-id>.md
    └── Journal       append-only history, memory snapshots, recovery
           │
-          ├── Context       pinned memory + compacted history + active skill
+          ├── Context       pinned memory + current plan + compacted history + active skill
           └── ActionRuntime classify → policy → intent → start → commit
                                       └── recovery contract → reconcile
 ```
@@ -77,6 +79,7 @@ cpcodeagent/
   kernel.py          four-state run loop and budgets
   session.py         session identity, turn projection, safe journal lookup
   context.py         incremental hot context and replayable layered compaction
+  planning.py        turn-scoped plan validation, status, and rendering
   memory.py          bounded user/session Markdown memory and journal snapshots
   skills.py          SKILL.md discovery and progressive loading
   tools.py           Tool contract and barrier scheduler
@@ -89,6 +92,25 @@ cpcodeagent/
   ui.py              Rich spinner, token stream, tool and verifier progress
   verifier.py        explicit completion gate
 ```
+
+## Planning complex work
+
+For work with three or more steps, multiple files, refactors, migrations, or an uncertain
+implementation path, the model performs enough read-only discovery to make a sound plan,
+then calls the built-in `plan_write` tool before modifying the workspace. Short tasks can
+continue directly without planning overhead.
+
+`plan_write` replaces one bounded list of at most eight items. Items use only `pending`,
+`in_progress`, and `completed`, with at most one item in progress. It has the internal
+`RUNTIME_WRITE` capability: it crosses a scheduler barrier but requires no workspace-write
+authority. Its normal durable tool intent/result records are sufficient to reconstruct the
+latest committed plan, so no second plan database exists.
+
+The current plan is pinned ahead of compressed history. After three agent steps without an
+update, the context view adds a short ephemeral reminder. If a plan exists, the completion
+gate refuses a final answer while any item remains unfinished; the model must continue or
+revise the plan. A new user turn resets the working plan, while the completed turn remains
+auditable in the Journal.
 
 ## Skill model
 

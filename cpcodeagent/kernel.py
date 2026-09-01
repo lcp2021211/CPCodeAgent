@@ -14,6 +14,7 @@ from .executor import Executor
 from .journal import EventKind, Journal
 from .memory import MemoryManager
 from .model import ContextOverflowError, Model, ModelError
+from .planning import PlanState
 from .policy import Approver, RejectingApprover, RunPolicy
 from .recovery import ActionLedger, ActionRecord
 from .session import SessionState
@@ -523,6 +524,23 @@ class Harness:
                 progress,
                 turn_id,
             )
+        plan = self._current_plan(journal)
+        if plan is not None and not plan.completed:
+            unfinished = ", ".join(f"#{item.id} {item.text}" for item in plan.unfinished)
+            journal.append(
+                EventKind.INPUT,
+                {
+                    "content": (
+                        "Completion was not accepted because the execution plan still has "
+                        f"unfinished items: {unfinished}. Continue the work, or revise the plan "
+                        "with plan_write if the remaining items are no longer appropriate."
+                    ),
+                    "source": "plan_guard",
+                    "turn_id": turn_id,
+                },
+            )
+            self._checkpoint(journal, executor, ())
+            return None
         if self.verifier is not None:
             self._emit(RunEventKind.VERIFY_START)
             verification = self.verifier.verify(executor)
@@ -550,6 +568,13 @@ class Harness:
             progress,
             turn_id,
         )
+
+    def _current_plan(self, journal: Journal) -> PlanState | None:
+        state = self._context_states.get(journal)
+        if state is None:
+            state = self.context.rebuild(journal)
+            self._context_states[journal] = state
+        return state.plan
 
     def _budget_error(self, progress: RunProgress) -> str | None:
         if progress.steps >= self.limits.max_steps:

@@ -6,6 +6,7 @@ from .journal import Journal
 from .kernel import Harness
 from .memory import MemoryDelta, MemoryEntry, MemoryManager, MemoryScope, MemoryStore
 from .model import OpenAICompatibleModel, ResilientModel, ScriptedModel
+from .planning import PlanItem, PlanState, PlanStatus
 from .policy import RunPolicy
 from .recovery import ActionLedger, ActionState, EffectContract, EffectState, RecoveryMode
 from .session import Session, SessionState, SessionStore, TurnState
@@ -31,6 +32,9 @@ __all__ = [
     "MemoryScope",
     "MemoryStore",
     "OpenAICompatibleModel",
+    "PlanItem",
+    "PlanState",
+    "PlanStatus",
     "RecoveryMode",
     "ResilientModel",
     "RunEvent",

@@ -220,6 +220,33 @@ class StreamingTests(unittest.TestCase):
         self.assertIn("read_file", rendered)
         self.assertEqual(rendered.count("hello"), 1)
 
+    def test_terminal_ui_renders_plan_as_a_panel(self) -> None:
+        output = io.StringIO()
+        ui = TerminalUI(
+            Console(file=output, force_terminal=True, color_system="standard", width=100)
+        )
+        call = ToolCall("plan-1", "plan_write", {"items": []})
+        ui.handle(RunEvent(RunEventKind.TOOLS_START, {"calls": (call,)}))
+        ui.handle(
+            RunEvent(
+                RunEventKind.TOOLS_END,
+                {
+                    "results": (
+                        ToolResult(
+                            "plan-1",
+                            True,
+                            "[>] #inspect: Inspect code\nProgress: 0/2 completed",
+                        ),
+                    )
+                },
+            )
+        )
+
+        rendered = output.getvalue()
+        self.assertIn("execution plan", rendered)
+        self.assertIn("Inspect code", rendered)
+        self.assertIn("Progress", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()
