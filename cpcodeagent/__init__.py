@@ -11,6 +11,13 @@ from .policy import RunPolicy
 from .recovery import ActionLedger, ActionState, EffectContract, EffectState, RecoveryMode
 from .session import Session, SessionState, SessionStore, TurnState
 from .skills import SkillRegistry
+from .subagents import (
+    DelegateTaskTool,
+    SubagentMode,
+    SubagentResult,
+    SubagentRunner,
+    SubagentStatus,
+)
 from .tools import ToolRuntime
 from .types import RunEvent, RunEventKind, RunLimits, RunOutcome
 from .ui import TerminalUI
@@ -20,6 +27,7 @@ __all__ = [
     "ActionState",
     "ContextEngine",
     "ContextState",
+    "DelegateTaskTool",
     "DockerExecutor",
     "EffectContract",
     "EffectState",
@@ -47,6 +55,10 @@ __all__ = [
     "SessionState",
     "SessionStore",
     "SkillRegistry",
+    "SubagentMode",
+    "SubagentResult",
+    "SubagentRunner",
+    "SubagentStatus",
     "TerminalUI",
     "ToolRuntime",
     "TurnState",

@@ -1,7 +1,7 @@
 # CPCodeAgent
 
 CPCodeAgent is a compact coding-agent harness implemented in Python. Its goal is not to
-maximize framework surface area, but to make five difficult properties explicit:
+maximize framework surface area, but to make six difficult properties explicit:
 
 1. a session is a durable sequence of turns, while model context is only a replayable view;
 2. one semantic `Action` classification drives scheduling, permission, and retry;
@@ -10,6 +10,8 @@ maximize framework surface area, but to make five difficult properties explicit:
    actions are reconciled from evidence and never replayed blindly.
 5. complex turns can maintain a visible, crash-recoverable execution plan that stays
    pinned even when older conversation history is compressed.
+6. bounded child agents get fresh context and isolated execution, while the parent receives
+   only a small structured result and remains responsible for the final decision.
 
 ## Architecture
 
@@ -21,12 +23,14 @@ Session
    └── Journal       append-only history, memory snapshots, recovery
           │
           ├── Context       pinned memory + current plan + compacted history + active skill
-          └── ActionRuntime classify → policy → intent → start → commit
-                                      └── recovery contract → reconcile
+          ├── ActionRuntime classify → policy → intent → start → commit
+          │                           └── recovery contract → reconcile
+          └── Subagent      fresh context + child Journal + isolated workspace
+                                      └── structured result → parent judgment
 ```
 
-The implementation deliberately has no generic hook bus, planner DAG, or built-in
-multi-agent layer. Extension happens through a few direct interfaces: `Model`, `Tool`,
+The implementation deliberately has no generic hook bus, planner DAG, or generic agent
+graph. Extension happens through a few direct interfaces: `Model`, `Tool`,
 `Policy`, `Executor`, `SkillRegistry`, and `Verifier`.
 
 ## Data flow
@@ -80,6 +84,7 @@ cpcodeagent/
   session.py         session identity, turn projection, safe journal lookup
   context.py         incremental hot context and replayable layered compaction
   planning.py        turn-scoped plan validation, status, and rendering
+  subagents.py       bounded delegation, child runtime, and overlay artifacts
   memory.py          bounded user/session Markdown memory and journal snapshots
   skills.py          SKILL.md discovery and progressive loading
   tools.py           Tool contract and barrier scheduler
@@ -111,6 +116,37 @@ update, the context view adds a short ephemeral reminder. If a plan exists, the 
 gate refuses a final answer while any item remains unfinished; the model must continue or
 revise the plan. A new user turn resets the working plan, while the completed turn remains
 auditable in the Journal.
+
+## Bounded child agents
+
+The parent can call one `delegate_task(task, mode)` tool when a bounded investigation would
+otherwise fill its context with low-level exploration. Delegation is intentionally not a
+general agent graph:
+
+```text
+parent tool call
+    └── action-id-scoped child run
+          ├── fresh ContextState (no parent transcript, plan, summary, or memory)
+          ├── separate Journal and 12-step budget
+          ├── filtered tools (no delegate_task, therefore no grandchildren)
+          └── submit_result(summary, evidence, recommendation)
+                         ↓
+              bounded SubagentResult in parent context
+```
+
+`inspect` children share the parent workspace only through read tools; write and command
+tools are absent. `patch` children receive a persistent copied workspace. Their writes never
+touch the parent checkout, and local children still receive no command tool because a local
+process is not an OS sandbox. A Docker-backed parent may give the overlay child a sandboxed
+command tool. Changed bytes are stored as a patch manifest outside the repository under
+`<journal-dir>/_subagents/<session-id>/<action-id>/patch.json`; the parent receives only its
+artifact ID and changed paths and must independently judge or reproduce the change.
+
+The parent Journal contains only the normal `delegate_task` intent/start/result lifecycle.
+The complete child trajectory stays in the child Journal. Because the action ID is also the
+child-run directory key, recovery after “child finished, parent result not committed” reuses
+the completed structured result; an incomplete child resumes from its own Journal. No child
+trajectory is copied into the parent model context or streamed into the terminal.
 
 ## Skill model
 
@@ -317,6 +353,6 @@ python -m unittest discover -s tests -v
 
 ## Current boundary
 
-The core intentionally excludes multi-agent coordination, MCP discovery, and automatic
-skill evolution. The append-only trajectories and skill hashes provide a clean base for
-adding those experimentally without making the execution kernel more complicated.
+The core intentionally excludes recursive multi-agent graphs, MCP discovery, and automatic
+skill evolution. Its child-agent boundary is one-level and evidence-oriented: delegation
+reduces context load without transferring final authority away from the main Agent.
