@@ -19,6 +19,7 @@ from cpcodeagent.subagents import (
     SubagentMode,
     SubagentRunner,
     SubagentStatus,
+    WriteSharedContractTool,
 )
 from cpcodeagent.tools import ToolRuntime
 from cpcodeagent.types import ModelResponse, RunStatus, ToolCall, ToolResult
@@ -62,6 +63,132 @@ class InterruptAfterFirstWriteExecutor(LocalExecutor):
 
 
 class SubagentTests(unittest.TestCase):
+    def test_shared_contract_is_content_addressed_and_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            runner = SubagentRunner(ScriptedModel([]), root / "children")
+            runtime = ToolRuntime((WriteSharedContractTool(runner),))
+            arguments = {
+                "name": "ui-interface",
+                "content": "# IDs\n- totalTasks\n\n# Status\n- all | active | completed",
+            }
+
+            first = runtime.execute_batch(
+                (ToolCall("contract-1", "write_shared_contract", arguments),),
+                RunPolicy(),
+                LocalExecutor(workspace),
+                Journal(),
+            )[0]
+            second = runtime.execute_batch(
+                (ToolCall("contract-2", "write_shared_contract", arguments),),
+                RunPolicy(),
+                LocalExecutor(workspace),
+                Journal(),
+            )[0]
+
+            first_id = json.loads(first.output)["contract_id"]
+            self.assertTrue(first.ok and second.ok)
+            self.assertEqual(first_id, json.loads(second.output)["contract_id"])
+            self.assertEqual(
+                len(tuple((root / "children" / "contracts").glob("*.json"))), 1
+            )
+            self.assertEqual(runner.contracts.load(first_id).content, arguments["content"])
+
+    def test_related_children_receive_the_exact_same_shared_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            model = ScriptedModel(
+                [
+                    ModelResponse(tool_calls=(_submit("submit-a"),)),
+                    ModelResponse(content="Submitted A."),
+                    ModelResponse(tool_calls=(_submit("submit-b"),)),
+                    ModelResponse(content="Submitted B."),
+                ]
+            )
+            runner = SubagentRunner(model, root / "children")
+            content = (
+                "# Shared UI Contract\n"
+                "- DOM IDs: totalTasks, activeTasks, completedTasks\n"
+                "- status: all | active | completed\n"
+                "- priority: high | medium | low"
+            )
+            contract = runner.write_contract(
+                "task-planner-ui", content, LocalExecutor(workspace)
+            )
+
+            runner.run(
+                "Implement index.html.",
+                SubagentMode.INSPECT,
+                LocalExecutor(workspace),
+                "f" * 32,
+                contract.contract_id,
+            )
+            runner.run(
+                "Implement app.js.",
+                SubagentMode.INSPECT,
+                LocalExecutor(workspace),
+                "g" * 32,
+                contract.contract_id,
+            )
+
+            first_context = "\n".join(
+                str(message.get("content") or "") for message in model.requests[0][0]
+            )
+            second_context = "\n".join(
+                str(message.get("content") or "") for message in model.requests[2][0]
+            )
+            self.assertIn(content, first_context)
+            self.assertIn(content, second_context)
+            self.assertIn(contract.contract_id, first_context)
+            self.assertIn(contract.contract_id, second_context)
+            first_binding = json.loads(
+                (root / "children" / ("f" * 32) / "delegation.json").read_text()
+            )
+            second_binding = json.loads(
+                (root / "children" / ("g" * 32) / "delegation.json").read_text()
+            )
+            self.assertEqual(first_binding["contract_id"], contract.contract_id)
+            self.assertEqual(second_binding["contract_id"], contract.contract_id)
+
+    def test_action_recovery_cannot_switch_shared_contracts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            model = ScriptedModel(
+                [
+                    ModelResponse(tool_calls=(_submit("submit"),)),
+                    ModelResponse(content="Submitted."),
+                ]
+            )
+            runner = SubagentRunner(model, root / "children")
+            executor = LocalExecutor(workspace)
+            first = runner.write_contract("ui-v1", "# IDs\n- totalTasks", executor)
+            second = runner.write_contract("ui-v2", "# IDs\n- taskTotal", executor)
+            action_id = "h" * 32
+
+            runner.run(
+                "Implement the UI.",
+                SubagentMode.INSPECT,
+                executor,
+                action_id,
+                first.contract_id,
+            )
+
+            with self.assertRaisesRegex(ValueError, "different delegation"):
+                runner.run(
+                    "Implement the UI.",
+                    SubagentMode.INSPECT,
+                    executor,
+                    action_id,
+                    second.contract_id,
+                )
+            self.assertEqual(len(model.requests), 2)
+
     def test_child_tool_surface_forbids_grandchildren(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -191,12 +318,18 @@ class SubagentTests(unittest.TestCase):
             runner = SubagentRunner(model, root / "children")
             executor = LocalExecutor(workspace)
             before = executor.snapshot().revision
+            contract = runner.write_contract(
+                "module-interface",
+                "# Files\n- module.py\n\n# Value\n- value must be 2",
+                executor,
+            )
 
             result = runner.run(
                 "Change module.py to value 2.",
                 SubagentMode.PATCH,
                 executor,
                 "b" * 32,
+                contract.contract_id,
             )
 
             self.assertEqual(target.read_text(encoding="utf-8"), "value = 1\n")
@@ -211,6 +344,7 @@ class SubagentTests(unittest.TestCase):
                 )
             )
             self.assertEqual(patch["changes"][0]["path"], "module.py")
+            self.assertEqual(patch["contract_id"], contract.contract_id)
             self.assertNotIn("run_command", _tool_names(model.requests[0]))
 
             parent_tools = ToolRuntime(
@@ -230,6 +364,7 @@ class SubagentTests(unittest.TestCase):
             )[0]
             self.assertTrue(preview.ok)
             self.assertIn("+value = 2", preview.output)
+            self.assertIn(f"Contract: {contract.contract_id}", preview.output)
             applied = parent_tools.execute_batch(
                 [
                     ToolCall(
