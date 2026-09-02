@@ -10,9 +10,12 @@ from cpcodeagent.executor import ExecutionEnv, LocalExecutor
 from cpcodeagent.journal import EventKind, Journal
 from cpcodeagent.kernel import Harness
 from cpcodeagent.model import ScriptedModel
+from cpcodeagent.policy import RunPolicy
 from cpcodeagent.recovery import ActionLedger
 from cpcodeagent.subagents import (
+    ApplySubagentPatchTool,
     DelegateTaskTool,
+    ReadSubagentPatchTool,
     SubagentMode,
     SubagentRunner,
     SubagentStatus,
@@ -39,6 +42,23 @@ def _tool_names(request: tuple) -> set[str]:
         for item in request[1]
         if isinstance(item, dict) and isinstance(item.get("function"), dict)
     }
+
+
+class InterruptAfterFirstWriteExecutor(LocalExecutor):
+    def __init__(self, workspace: Path):
+        super().__init__(workspace)
+        self.interrupted = False
+
+    def write_text(
+        self,
+        path: str,
+        content: str,
+        operation_id: str | None = None,
+    ) -> None:
+        super().write_text(path, content, operation_id)
+        if not self.interrupted:
+            self.interrupted = True
+            raise KeyboardInterrupt
 
 
 class SubagentTests(unittest.TestCase):
@@ -192,6 +212,144 @@ class SubagentTests(unittest.TestCase):
             )
             self.assertEqual(patch["changes"][0]["path"], "module.py")
             self.assertNotIn("run_command", _tool_names(model.requests[0]))
+
+            parent_tools = ToolRuntime(
+                (ReadSubagentPatchTool(runner), ApplySubagentPatchTool(runner))
+            )
+            preview = parent_tools.execute_batch(
+                [
+                    ToolCall(
+                        "preview",
+                        "read_subagent_patch",
+                        {"artifact_id": result.artifact_id},
+                    )
+                ],
+                RunPolicy(),
+                executor,
+                Journal(),
+            )[0]
+            self.assertTrue(preview.ok)
+            self.assertIn("+value = 2", preview.output)
+            applied = parent_tools.execute_batch(
+                [
+                    ToolCall(
+                        "apply",
+                        "apply_subagent_patch",
+                        {"artifact_id": result.artifact_id},
+                    )
+                ],
+                RunPolicy(),
+                executor,
+                Journal(),
+            )[0]
+            self.assertTrue(applied.ok)
+            self.assertEqual(target.read_text(encoding="utf-8"), "value = 2\n")
+
+    def test_patch_apply_refuses_a_diverged_parent_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            target = workspace / "module.py"
+            target.write_text("value = 1\n", encoding="utf-8")
+            model = ScriptedModel(
+                [
+                    ModelResponse(
+                        tool_calls=(
+                            ToolCall(
+                                "write",
+                                "write_file",
+                                {"path": "module.py", "content": "value = 2\n"},
+                            ),
+                        )
+                    ),
+                    ModelResponse(tool_calls=(_submit("submit"),)),
+                    ModelResponse(content="Submitted."),
+                ]
+            )
+            runner = SubagentRunner(model, root / "children")
+            executor = LocalExecutor(workspace)
+            result = runner.run(
+                "Change module.py.", SubagentMode.PATCH, executor, "d" * 32
+            )
+            target.write_text("user change\n", encoding="utf-8")
+            runtime = ToolRuntime((ApplySubagentPatchTool(runner),))
+
+            applied = runtime.execute_batch(
+                [
+                    ToolCall(
+                        "apply",
+                        "apply_subagent_patch",
+                        {"artifact_id": result.artifact_id},
+                    )
+                ],
+                RunPolicy(),
+                executor,
+                Journal(),
+            )[0]
+
+            self.assertFalse(applied.ok)
+            self.assertEqual(applied.error, "PRECONDITION_CHANGED")
+            self.assertEqual(target.read_text(encoding="utf-8"), "user change\n")
+
+    def test_partial_multi_file_apply_resumes_from_durable_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            child_model = ScriptedModel(
+                [
+                    ModelResponse(
+                        tool_calls=(
+                            ToolCall(
+                                "write-a",
+                                "write_file",
+                                {"path": "a.txt", "content": "a\n"},
+                            ),
+                            ToolCall(
+                                "write-b",
+                                "write_file",
+                                {"path": "b.txt", "content": "b\n"},
+                            ),
+                        )
+                    ),
+                    ModelResponse(tool_calls=(_submit("submit"),)),
+                    ModelResponse(content="Submitted."),
+                ]
+            )
+            runner = SubagentRunner(child_model, root / "children")
+            artifact = runner.run(
+                "Create a.txt and b.txt.",
+                SubagentMode.PATCH,
+                LocalExecutor(workspace),
+                "e" * 32,
+            )
+            runtime = ToolRuntime((ApplySubagentPatchTool(runner),))
+            journal = Journal()
+            call = ToolCall(
+                "apply",
+                "apply_subagent_patch",
+                {"artifact_id": artifact.artifact_id},
+            )
+
+            with self.assertRaises(KeyboardInterrupt):
+                runtime.execute_batch(
+                    (call,),
+                    RunPolicy(),
+                    InterruptAfterFirstWriteExecutor(workspace),
+                    journal,
+                )
+
+            pending = ActionLedger.from_journal(journal).pending()[0]
+            result = runtime.recover_pending(
+                pending,
+                LocalExecutor(workspace),
+                journal,
+            )
+            self.assertTrue(result.ok)
+            self.assertEqual(workspace.joinpath("a.txt").read_text(), "a\n")
+            self.assertEqual(workspace.joinpath("b.txt").read_text(), "b\n")
+            self.assertEqual(journal.last(EventKind.TOOL_RESULT).data["recovered"], "retried")
 
     def test_recovery_reuses_completed_child_by_action_id(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

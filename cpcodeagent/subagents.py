@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import binascii
+import difflib
 import hashlib
 import json
 import os
@@ -26,12 +28,12 @@ from .builtin_tools import (
     WriteFileTool,
 )
 from .context import ContextEngine
-from .executor import DockerExecutor, ExecutionEnv, Executor, LocalExecutor
+from .executor import DockerExecutor, ExecutionEnv, ExecutionError, Executor, LocalExecutor
 from .journal import EventKind, Journal
 from .kernel import Harness
 from .model import Model
 from .policy import RunPolicy
-from .recovery import EffectContract
+from .recovery import EffectContract, FileCondition
 from .skills import SkillRegistry
 from .tools import Tool, ToolExecution, ToolRuntime
 from .types import (
@@ -46,6 +48,8 @@ from .types import (
 )
 
 _ACTION_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+_DIGEST = re.compile(r"^[0-9a-f]{64}$")
+_MAX_PATCH_BYTES = 10_000_000
 _IGNORED_PARTS = frozenset(
     {
         ".git",
@@ -120,6 +124,139 @@ class SubagentResult:
             str(data["artifact_id"]) if data.get("artifact_id") else None,
             tuple(str(item) for item in data.get("changed_paths", ())),
         )
+
+
+@dataclass(frozen=True)
+class PatchChange:
+    path: str
+    before_digest: str | None
+    after_digest: str | None
+    content: bytes | None
+    before_content: bytes | None = None
+
+
+@dataclass(frozen=True)
+class PatchArtifact:
+    artifact_id: str
+    workspace: Path
+    changes: tuple[PatchChange, ...]
+
+    @classmethod
+    def load(
+        cls,
+        root: Path,
+        artifact_id: str,
+        executor: Executor,
+    ) -> PatchArtifact:
+        if not _ACTION_ID.fullmatch(artifact_id):
+            raise ValueError("Invalid subagent artifact ID")
+        path = root / artifact_id / "patch.json"
+        if not path.is_file():
+            raise ValueError(f"Unknown subagent patch: {artifact_id}")
+        if path.stat().st_size > _MAX_PATCH_BYTES * 3:
+            raise ValueError("Subagent patch manifest is too large")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        workspace = Path(str(data["workspace"])).expanduser().resolve()
+        if workspace != executor.workspace:
+            raise ValueError("Subagent patch belongs to a different workspace")
+
+        changes: list[PatchChange] = []
+        seen: set[str] = set()
+        content_bytes = 0
+        for raw in data.get("changes", ()):
+            relative = str(raw["path"])
+            resolved = executor.resolve(relative)
+            relative = resolved.relative_to(executor.workspace).as_posix()
+            if relative in seen:
+                raise ValueError(f"Duplicate patch path: {relative}")
+            seen.add(relative)
+            before = _optional_digest(raw.get("before_digest"))
+            after = _optional_digest(raw.get("after_digest"))
+            content = _decode_content(raw.get("content_base64"))
+            before_content = _decode_content(raw.get("before_content_base64"))
+            content_bytes += len(content or b"") + len(before_content or b"")
+            if content_bytes > _MAX_PATCH_BYTES:
+                raise ValueError("Subagent patch content exceeds 10 MB")
+            if after is None and content is not None:
+                raise ValueError(f"Deleted path contains after-content: {relative}")
+            if after is not None and (
+                content is None or hashlib.sha256(content).hexdigest() != after
+            ):
+                raise ValueError(f"Patch content digest mismatch: {relative}")
+            if before_content is not None and hashlib.sha256(before_content).hexdigest() != before:
+                raise ValueError(f"Patch baseline digest mismatch: {relative}")
+            changes.append(
+                PatchChange(relative, before, after, content, before_content)
+            )
+        if not changes:
+            raise ValueError("Subagent patch contains no changes")
+        return cls(artifact_id, workspace, tuple(changes))
+
+    def conditions(self) -> tuple[tuple[FileCondition, ...], tuple[FileCondition, ...]]:
+        return (
+            tuple(FileCondition(item.path, item.before_digest) for item in self.changes),
+            tuple(FileCondition(item.path, item.after_digest) for item in self.changes),
+        )
+
+    def render(self, executor: Executor, limit: int = 12_000) -> str:
+        sections = [
+            f"Artifact: {self.artifact_id}",
+            f"Workspace: {self.workspace}",
+            f"Changed paths: {', '.join(item.path for item in self.changes)}",
+        ]
+        for change in self.changes:
+            current_digest = executor.file_digest(change.path)
+            state = (
+                "already applied"
+                if current_digest == change.after_digest
+                else "ready"
+                if current_digest == change.before_digest
+                else "conflict"
+            )
+            before = change.before_content
+            if before is None and current_digest == change.before_digest:
+                target = executor.resolve(change.path)
+                before = target.read_bytes() if target.is_file() else b""
+            diff = _render_change(change, before)
+            sections.append(f"\n## {change.path} [{state}]\n{diff}")
+        rendered = "\n".join(sections)
+        if len(rendered) <= limit:
+            return rendered
+        head = limit * 2 // 3
+        tail = limit - head
+        return f"{rendered[:head]}\n... patch preview truncated ...\n{rendered[-tail:]}"
+
+    def apply(self, executor: Executor, action_id: str) -> tuple[str, ...]:
+        decoded: dict[str, str] = {}
+        for change in self.changes:
+            current = executor.file_digest(change.path)
+            if current not in {change.before_digest, change.after_digest}:
+                raise ExecutionError(
+                    "PATCH_CONFLICT",
+                    f"Workspace file diverged from patch baseline: {change.path}",
+                )
+            if change.content is not None:
+                try:
+                    decoded[change.path] = change.content.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise ExecutionError(
+                        "BINARY_PATCH_UNSUPPORTED",
+                        f"Cannot apply binary patch with text executor: {change.path}",
+                    ) from exc
+        applied: list[str] = []
+        for change in self.changes:
+            if executor.file_digest(change.path) == change.after_digest:
+                continue
+            if change.content is None:
+                executor.delete_file(change.path)
+            else:
+                executor.write_text(
+                    change.path,
+                    decoded[change.path],
+                    operation_id=action_id,
+                )
+            applied.append(change.path)
+        return tuple(applied)
 
 
 class SubmitResultTool(Tool):
@@ -284,6 +421,11 @@ class SubagentRunner:
             raise ValueError("Invalid subagent action ID")
         return self.root / action_id
 
+    def load_patch(self, artifact_id: str, executor: Executor) -> PatchArtifact:
+        """Load and validate one artifact against its original parent workspace."""
+
+        return PatchArtifact.load(self.root, artifact_id, executor)
+
     def _executor(
         self,
         mode: SubagentMode,
@@ -401,17 +543,35 @@ class SubagentRunner:
             target = overlay / relative
             if target.is_symlink():
                 raise ValueError("symbolic-link changes are unsupported")
+            if target.is_file() and artifact_bytes + target.stat().st_size > _MAX_PATCH_BYTES:
+                raise ValueError("changed file content exceeds 10 MB")
             raw = target.read_bytes() if target.is_file() else None
             artifact_bytes += len(raw or b"")
-            if artifact_bytes > 10_000_000:
-                raise ValueError("changed file content exceeds 10 MB")
             content = base64.b64encode(raw).decode("ascii") if raw is not None else None
+            parent_target = parent_workspace / relative
+            if (
+                parent_target.is_file()
+                and artifact_bytes + parent_target.stat().st_size > _MAX_PATCH_BYTES
+            ):
+                raise ValueError("changed file content exceeds 10 MB")
+            parent_raw = parent_target.read_bytes() if parent_target.is_file() else None
+            if (
+                parent_raw is not None
+                and hashlib.sha256(parent_raw).hexdigest() != baseline.get(relative)
+            ):
+                parent_raw = None
+            artifact_bytes += len(parent_raw or b"")
             changes.append(
                 {
                     "path": relative,
                     "before_digest": baseline.get(relative),
                     "after_digest": after.get(relative),
                     "content_base64": content,
+                    "before_content_base64": (
+                        base64.b64encode(parent_raw).decode("ascii")
+                        if parent_raw is not None
+                        else None
+                    ),
                 }
             )
         _atomic_json(
@@ -477,6 +637,81 @@ class DelegateTaskTool(Tool):
         )
 
 
+class ReadSubagentPatchTool(Tool):
+    name = "read_subagent_patch"
+    description = (
+        "Preview a child agent's isolated patch as a bounded unified diff before deciding "
+        "whether to apply it."
+    )
+    input_schema: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {"artifact_id": {"type": "string"}},
+        "required": ["artifact_id"],
+    }
+
+    def __init__(self, runner: SubagentRunner):
+        self.runner = runner
+
+    def classify(self, arguments: dict[str, Any], env: ExecutionEnv) -> Action:
+        artifact = self.runner.load_patch(str(arguments["artifact_id"]), env.executor)
+        return Action(
+            frozenset({Capability.READ}),
+            (f"subagent-patch:{artifact.artifact_id}",),
+            True,
+        )
+
+    def execute(self, arguments: dict[str, Any], env: ExecutionEnv) -> ToolExecution:
+        artifact = self.runner.load_patch(str(arguments["artifact_id"]), env.executor)
+        return ToolExecution(True, artifact.render(env.executor))
+
+
+class ApplySubagentPatchTool(Tool):
+    name = "apply_subagent_patch"
+    description = (
+        "Apply one reviewed child-agent patch to the parent workspace. Every target must "
+        "still match its recorded baseline; divergent files are never overwritten."
+    )
+    input_schema: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {"artifact_id": {"type": "string"}},
+        "required": ["artifact_id"],
+    }
+
+    def __init__(self, runner: SubagentRunner):
+        self.runner = runner
+
+    def classify(self, arguments: dict[str, Any], env: ExecutionEnv) -> Action:
+        artifact = self.runner.load_patch(str(arguments["artifact_id"]), env.executor)
+        return Action(
+            frozenset({Capability.WORKSPACE_WRITE}),
+            tuple(f"file:{env.executor.resolve(item.path)}" for item in artifact.changes),
+            False,
+        )
+
+    def effect_contract(
+        self,
+        arguments: dict[str, Any],
+        action: Action,
+        env: ExecutionEnv,
+        action_id: str,
+    ) -> EffectContract:
+        artifact = self.runner.load_patch(str(arguments["artifact_id"]), env.executor)
+        before, after = artifact.conditions()
+        return EffectContract.file_transitions(before, after)
+
+    def execute(self, arguments: dict[str, Any], env: ExecutionEnv) -> ToolExecution:
+        if env.action_id is None:
+            raise RuntimeError("apply_subagent_patch requires a durable action ID")
+        artifact = self.runner.load_patch(str(arguments["artifact_id"]), env.executor)
+        applied = artifact.apply(env.executor, env.action_id)
+        detail = ", ".join(applied) if applied else "all paths already matched"
+        return ToolExecution(
+            True,
+            f"Applied subagent patch {artifact.artifact_id}: {detail}",
+            artifacts=(f"applied-patch:{artifact.artifact_id}",),
+        )
+
+
 def _delegation(arguments: dict[str, Any]) -> tuple[str, SubagentMode]:
     task = _bounded_text(str(arguments["task"]), 4_000, "task")
     return task, SubagentMode(str(arguments["mode"]))
@@ -516,6 +751,54 @@ def _bounded_text(value: str, limit: int, name: str, *, allow_empty: bool = Fals
     if len(value) > limit:
         value = value[: limit - 1] + "…"
     return value
+
+
+def _optional_digest(value: object) -> str | None:
+    if value is None:
+        return None
+    digest = str(value)
+    if not _DIGEST.fullmatch(digest):
+        raise ValueError("Invalid patch content digest")
+    return digest
+
+
+def _decode_content(value: object) -> bytes | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError("Patch content must be base64 text")
+    try:
+        return base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("Invalid base64 patch content") from exc
+
+
+def _render_change(change: PatchChange, before: bytes | None) -> str:
+    if before is None and change.before_digest is None:
+        before = b""
+    after = change.content if change.content is not None else b""
+    if before is None:
+        return (
+            "Baseline bytes are unavailable for this legacy artifact; "
+            f"before={change.before_digest or 'absent'} after={change.after_digest or 'absent'}."
+        )
+    try:
+        before_text = before.decode("utf-8")
+        after_text = after.decode("utf-8")
+    except UnicodeDecodeError:
+        return (
+            "Binary change; "
+            f"before={change.before_digest or 'absent'} after={change.after_digest or 'absent'}."
+        )
+    return "".join(
+        difflib.unified_diff(
+            before_text.splitlines(keepends=True),
+            after_text.splitlines(keepends=True),
+            fromfile=f"a/{change.path}",
+            tofile=f"b/{change.path}",
+            n=3,
+        )
+    ) or "(no textual difference)"
 
 
 def _copy_workspace(source: Path, destination: Path) -> None:

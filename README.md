@@ -139,14 +139,27 @@ tools are absent. `patch` children receive a persistent copied workspace. Their 
 touch the parent checkout, and local children still receive no command tool because a local
 process is not an OS sandbox. A Docker-backed parent may give the overlay child a sandboxed
 command tool. Changed bytes are stored as a patch manifest outside the repository under
-`<journal-dir>/_subagents/<session-id>/<action-id>/patch.json`; the parent receives only its
-artifact ID and changed paths and must independently judge or reproduce the change.
+`<journal-dir>/_subagents/<session-id>/<action-id>/patch.json`. The parent receives its
+artifact ID and changed paths, then uses an explicit two-stage merge:
+
+```text
+read_subagent_patch(artifact_id)   → bounded unified diff
+apply_subagent_patch(artifact_id)  → verify baselines → durable parent writes
+```
+
+Application never happens inside `delegate_task`. `apply_subagent_patch` first verifies that
+the artifact belongs to the current workspace, validates its content digests, and refuses to
+overwrite any path that matches neither the recorded before nor after state. This leaves the
+main Agent responsible for reviewing and accepting the child change.
 
 The parent Journal contains only the normal `delegate_task` intent/start/result lifecycle.
 The complete child trajectory stays in the child Journal. Because the action ID is also the
 child-run directory key, recovery after “child finished, parent result not committed” reuses
 the completed structured result; an incomplete child resumes from its own Journal. No child
 trajectory is copied into the parent model context or streamed into the terminal.
+Patch application uses the same intent/start/commit protocol as built-in writes. If a
+multi-file apply is interrupted, recovery continues only while every target still matches
+either its recorded before-state or after-state; any third state becomes a recovery conflict.
 
 ## Skill model
 

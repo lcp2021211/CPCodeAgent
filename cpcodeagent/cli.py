@@ -19,7 +19,12 @@ from .model import OpenAICompatibleModel, ResilientModel
 from .policy import RunPolicy
 from .session import Session, SessionState, SessionStore
 from .skills import SkillRegistry
-from .subagents import DelegateTaskTool, SubagentRunner
+from .subagents import (
+    ApplySubagentPatchTool,
+    DelegateTaskTool,
+    ReadSubagentPatchTool,
+    SubagentRunner,
+)
 from .types import Decision, RunLimits, RunOutcome
 from .ui import TerminalUI
 from .verifier import CommandVerifier
@@ -180,6 +185,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     tools = build_default_runtime(skills)
     tools.register(DelegateTaskTool(subagents))
+    tools.register(ReadSubagentPatchTool(subagents))
+    tools.register(ApplySubagentPatchTool(subagents))
     verifier = CommandVerifier(shlex.split(args.verify)) if args.verify else None
     harness = Harness(
         model=model,

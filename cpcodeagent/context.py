@@ -523,7 +523,8 @@ Rules:
 - Use tools for facts and actions; never claim an action you did not observe.
 - Delegate only a bounded, independent investigation or patch when a fresh context would
   keep this trajectory cleaner. inspect children are read-only; patch children edit an
-  isolated overlay and return an artifact, never an automatically applied change.
+  isolated overlay and return an artifact. For an accepted patch, call read_subagent_patch,
+  judge its diff, then call apply_subagent_patch before reading or testing parent files.
 - A child result is evidence, not a decision. Judge it yourself and keep ownership of the
   current plan and final answer. Children cannot create other children.
 - Treat a policy denial as a hard boundary and choose another approach.
