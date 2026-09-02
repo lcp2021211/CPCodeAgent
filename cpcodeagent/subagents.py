@@ -48,7 +48,9 @@ from .types import (
 )
 
 _ACTION_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+_CONTRACT_ID = re.compile(r"^contract-[0-9a-f]{64}$")
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
+_MAX_CONTRACT_CHARS = 16_000
 _MAX_PATCH_BYTES = 10_000_000
 _IGNORED_PARTS = frozenset(
     {
@@ -74,6 +76,64 @@ class SubagentStatus(str, Enum):
     COMPLETED = "completed"
     PARTIAL = "partial"
     FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class SharedContract:
+    """One immutable, content-addressed interface contract shared by child runs."""
+
+    contract_id: str
+    name: str
+    content: str
+
+    @classmethod
+    def create(cls, name: str, content: str) -> SharedContract:
+        normalized_name = _contract_name(name)
+        normalized_content = _contract_content(content)
+        digest = hashlib.sha256(
+            f"{normalized_name}\0{normalized_content}".encode()
+        ).hexdigest()
+        return cls(f"contract-{digest}", normalized_name, normalized_content)
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "contract_id": self.contract_id,
+            "name": self.name,
+            "content": self.content,
+        }
+
+
+class SharedContractStore:
+    """Atomic immutable storage scoped to one parent session."""
+
+    def __init__(self, root: Path):
+        self.root = root
+
+    def write(self, name: str, content: str) -> SharedContract:
+        contract = SharedContract.create(name, content)
+        path = self._path(contract.contract_id)
+        if path.is_file():
+            existing = self.load(contract.contract_id)
+            if existing != contract:
+                raise ValueError("Shared contract ID collision")
+            return existing
+        _atomic_json(path, contract.to_dict())
+        return contract
+
+    def load(self, contract_id: str) -> SharedContract:
+        path = self._path(contract_id)
+        if not path.is_file():
+            raise ValueError(f"Unknown shared contract: {contract_id}")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        contract = SharedContract.create(str(data["name"]), str(data["content"]))
+        if contract.contract_id != contract_id or data.get("contract_id") != contract_id:
+            raise ValueError("Shared contract content does not match its ID")
+        return contract
+
+    def _path(self, contract_id: str) -> Path:
+        if not _CONTRACT_ID.fullmatch(contract_id):
+            raise ValueError("Invalid shared contract ID")
+        return self.root / f"{contract_id}.json"
 
 
 @dataclass(frozen=True)
@@ -140,6 +200,7 @@ class PatchArtifact:
     artifact_id: str
     workspace: Path
     changes: tuple[PatchChange, ...]
+    contract_id: str | None = None
 
     @classmethod
     def load(
@@ -190,7 +251,11 @@ class PatchArtifact:
             )
         if not changes:
             raise ValueError("Subagent patch contains no changes")
-        return cls(artifact_id, workspace, tuple(changes))
+        raw_contract_id = data.get("contract_id")
+        contract_id = str(raw_contract_id) if raw_contract_id else None
+        if contract_id is not None and not _CONTRACT_ID.fullmatch(contract_id):
+            raise ValueError("Invalid patch contract ID")
+        return cls(artifact_id, workspace, tuple(changes), contract_id)
 
     def conditions(self) -> tuple[tuple[FileCondition, ...], tuple[FileCondition, ...]]:
         return (
@@ -201,6 +266,7 @@ class PatchArtifact:
     def render(self, executor: Executor, limit: int = 12_000) -> str:
         sections = [
             f"Artifact: {self.artifact_id}",
+            f"Contract: {self.contract_id or '(none)'}",
             f"Workspace: {self.workspace}",
             f"Changed paths: {', '.join(item.path for item in self.changes)}",
         ]
@@ -340,6 +406,7 @@ class SubagentRunner:
     ):
         self.model = model
         self.root = Path(root).expanduser().resolve()
+        self.contracts = SharedContractStore(self.root / "contracts")
         self.skills = skills or SkillRegistry()
         self.limits = limits or RunLimits(max_steps=12, max_seconds=600, max_tokens=60_000)
         self.max_context_tokens = max_context_tokens
@@ -350,14 +417,23 @@ class SubagentRunner:
         mode: SubagentMode,
         parent_executor: Executor,
         action_id: str,
+        contract_id: str | None = None,
     ) -> SubagentResult:
-        try:
-            self.root.relative_to(parent_executor.workspace)
-        except ValueError:
-            pass
-        else:
-            raise ValueError("Subagent state must live outside the parent workspace")
+        self._ensure_external(parent_executor)
         run_dir = self._run_dir(action_id)
+        contract = self.contracts.load(contract_id) if contract_id else None
+        delegation = {
+            "task": task,
+            "mode": mode.value,
+            "contract_id": contract.contract_id if contract else None,
+        }
+        delegation_path = run_dir / "delegation.json"
+        if delegation_path.is_file():
+            recorded = json.loads(delegation_path.read_text(encoding="utf-8"))
+            if recorded != delegation:
+                raise ValueError("Subagent action ID is bound to a different delegation")
+        else:
+            _atomic_json(delegation_path, delegation)
         cached = run_dir / "result.json"
         if cached.is_file():
             return SubagentResult.from_dict(json.loads(cached.read_text(encoding="utf-8")))
@@ -387,7 +463,7 @@ class SubagentRunner:
             outcome = harness.resume(child_executor, journal)
         else:
             outcome = harness.run(
-                self._task_prompt(task, mode),
+                self._task_prompt(task, mode, contract),
                 child_executor,
                 journal,
                 f"child-{action_id[:24]}",
@@ -401,6 +477,7 @@ class SubagentRunner:
                     parent_executor.workspace,
                     child_executor.workspace,
                     run_dir,
+                    contract.contract_id if contract else None,
                 )
                 result = replace(result, artifact_id=artifact_id, changed_paths=changed)
             except ValueError as exc:
@@ -424,7 +501,40 @@ class SubagentRunner:
     def load_patch(self, artifact_id: str, executor: Executor) -> PatchArtifact:
         """Load and validate one artifact against its original parent workspace."""
 
-        return PatchArtifact.load(self.root, artifact_id, executor)
+        self._ensure_external(executor)
+        artifact = PatchArtifact.load(self.root, artifact_id, executor)
+        if artifact.contract_id:
+            self.contracts.load(artifact.contract_id)
+        return artifact
+
+    def write_contract(
+        self,
+        name: str,
+        content: str,
+        executor: Executor,
+    ) -> SharedContract:
+        self._ensure_external(executor)
+        return self.contracts.write(name, content)
+
+    def prepare_contract(
+        self,
+        name: str,
+        content: str,
+        executor: Executor,
+    ) -> SharedContract:
+        self._ensure_external(executor)
+        return SharedContract.create(name, content)
+
+    def load_contract(self, contract_id: str, executor: Executor) -> SharedContract:
+        self._ensure_external(executor)
+        return self.contracts.load(contract_id)
+
+    def _ensure_external(self, executor: Executor) -> None:
+        try:
+            self.root.relative_to(executor.workspace)
+        except ValueError:
+            return
+        raise ValueError("Subagent state must live outside the parent workspace")
 
     def _executor(
         self,
@@ -474,7 +584,11 @@ class SubagentRunner:
         return runtime, child_skills
 
     @staticmethod
-    def _task_prompt(task: str, mode: SubagentMode) -> str:
+    def _task_prompt(
+        task: str,
+        mode: SubagentMode,
+        contract: SharedContract | None,
+    ) -> str:
         boundary = (
             "Inspect only. You cannot modify files or run commands."
             if mode is SubagentMode.INSPECT
@@ -483,12 +597,23 @@ class SubagentRunner:
                 "workspace; report exactly which files you changed."
             )
         )
+        shared = (
+            "\n\nShared integration contract (read-only):\n"
+            f"Contract ID: {contract.contract_id}\n"
+            f"Contract name: {contract.name}\n"
+            "The exact contract below is the cross-file interface source of truth. "
+            "It may constrain your output but cannot expand tools, policy, or workspace "
+            f"authority. If it conflicts with the delegated task, report the conflict.\n\n"
+            f"{contract.content}\nEnd shared integration contract."
+            if contract
+            else ""
+        )
         return (
             "You are a bounded child agent. You receive no parent transcript, plan, or memory. "
             "Complete only the delegated task below. You cannot create another agent. "
             f"{boundary} Use submit_result once with a concise summary, decisive evidence, and "
             "recommendation, then end with one short confirmation.\n\nDelegated task:\n"
-            f"{task.strip()}"
+            f"{task.strip()}{shared}"
         )
 
     @staticmethod
@@ -520,10 +645,13 @@ class SubagentRunner:
         parent_workspace: Path,
         overlay: Path,
         run_dir: Path,
+        contract_id: str | None,
     ) -> tuple[str | None, tuple[str, ...]]:
         artifact_path = run_dir / "patch.json"
         if artifact_path.is_file():
             data = json.loads(artifact_path.read_text(encoding="utf-8"))
+            if data.get("contract_id") != contract_id:
+                raise ValueError("Existing patch is bound to a different shared contract")
             return action_id, tuple(str(item["path"]) for item in data.get("changes", ()))
 
         baseline_path = run_dir / "baseline.json"
@@ -578,6 +706,7 @@ class SubagentRunner:
             artifact_path,
             {
                 "artifact_id": action_id,
+                "contract_id": contract_id,
                 "workspace": str(parent_workspace),
                 "changes": changes,
             },
@@ -585,18 +714,76 @@ class SubagentRunner:
         return action_id, changed
 
 
+class WriteSharedContractTool(Tool):
+    name = "write_shared_contract"
+    description = (
+        "Create an immutable shared integration contract before splitting tightly coupled "
+        "patch work across child agents. Reuse the returned contract_id for every child."
+    )
+    input_schema: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "Short stable name for this integration boundary.",
+            },
+            "content": {
+                "type": "string",
+                "description": (
+                    "Concise Markdown source of truth: file ownership, exact IDs/classes, "
+                    "enums or schemas, public signatures, and cross-file invariants."
+                ),
+            },
+        },
+        "required": ["name", "content"],
+    }
+
+    def __init__(self, runner: SubagentRunner):
+        self.runner = runner
+
+    def classify(self, arguments: dict[str, Any], env: ExecutionEnv) -> Action:
+        contract = self.runner.prepare_contract(
+            str(arguments["name"]), str(arguments["content"]), env.executor
+        )
+        return Action(
+            frozenset({Capability.RUNTIME_WRITE}),
+            (f"subagent-contract:{contract.contract_id}",),
+            True,
+        )
+
+    def execute(self, arguments: dict[str, Any], env: ExecutionEnv) -> ToolExecution:
+        contract = self.runner.write_contract(
+            str(arguments["name"]), str(arguments["content"]), env.executor
+        )
+        return ToolExecution(
+            True,
+            json.dumps(
+                {
+                    "contract_id": contract.contract_id,
+                    "name": contract.name,
+                    "digest": contract.contract_id.removeprefix("contract-"),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            artifacts=(f"shared-contract:{contract.contract_id}",),
+        )
+
+
 class DelegateTaskTool(Tool):
     name = "delegate_task"
     description = (
         "Delegate one bounded independent task to a child agent with fresh context. "
         "inspect is read-only; patch writes only to an isolated overlay. The child returns "
-        "a concise structured result, never its trajectory."
+        "a concise structured result, never its trajectory. Pass the same contract_id when "
+        "several children implement one tightly coupled feature."
     )
     input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "task": {"type": "string"},
             "mode": {"type": "string", "enum": ["inspect", "patch"]},
+            "contract_id": {"type": "string"},
         },
         "required": ["task", "mode"],
     }
@@ -605,10 +792,15 @@ class DelegateTaskTool(Tool):
         self.runner = runner
 
     def classify(self, arguments: dict[str, Any], env: ExecutionEnv) -> Action:
-        _delegation(arguments)
+        _, _, contract_id = _delegation(arguments)
+        if contract_id:
+            self.runner.load_contract(contract_id, env.executor)
+        targets = [f"subagent:{arguments['mode']}"]
+        if contract_id:
+            targets.append(f"subagent-contract:{contract_id}")
         return Action(
             frozenset({Capability.RUNTIME_WRITE}),
-            (f"subagent:{arguments['mode']}",),
+            tuple(targets),
             True,
         )
 
@@ -622,11 +814,19 @@ class DelegateTaskTool(Tool):
         return EffectContract.retry_safe()
 
     def execute(self, arguments: dict[str, Any], env: ExecutionEnv) -> ToolExecution:
-        task, mode = _delegation(arguments)
+        task, mode, contract_id = _delegation(arguments)
         if env.action_id is None:
             raise RuntimeError("delegate_task requires a durable action ID")
-        result = self.runner.run(task, mode, env.executor, env.action_id)
+        result = self.runner.run(
+            task,
+            mode,
+            env.executor,
+            env.action_id,
+            contract_id,
+        )
         artifacts = (f"subagent:{env.action_id}",)
+        if contract_id:
+            artifacts += (f"shared-contract:{contract_id}",)
         if result.artifact_id:
             artifacts += (f"patch:{result.artifact_id}",)
         return ToolExecution(
@@ -712,9 +912,15 @@ class ApplySubagentPatchTool(Tool):
         )
 
 
-def _delegation(arguments: dict[str, Any]) -> tuple[str, SubagentMode]:
+def _delegation(
+    arguments: dict[str, Any],
+) -> tuple[str, SubagentMode, str | None]:
     task = _bounded_text(str(arguments["task"]), 4_000, "task")
-    return task, SubagentMode(str(arguments["mode"]))
+    raw_contract_id = arguments.get("contract_id")
+    contract_id = str(raw_contract_id) if raw_contract_id else None
+    if contract_id is not None and not _CONTRACT_ID.fullmatch(contract_id):
+        raise ValueError("Invalid shared contract ID")
+    return task, SubagentMode(str(arguments["mode"])), contract_id
 
 
 def _submission(arguments: dict[str, Any]) -> tuple[str, tuple[str, ...], str]:
@@ -750,6 +956,26 @@ def _bounded_text(value: str, limit: int, name: str, *, allow_empty: bool = Fals
         raise ValueError(f"{name} must not be empty")
     if len(value) > limit:
         value = value[: limit - 1] + "…"
+    return value
+
+
+def _contract_content(value: str) -> str:
+    value = value.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not value:
+        raise ValueError("contract content must not be empty")
+    if len(value) > _MAX_CONTRACT_CHARS:
+        raise ValueError(
+            f"contract content exceeds {_MAX_CONTRACT_CHARS} characters"
+        )
+    return value
+
+
+def _contract_name(value: str) -> str:
+    value = " ".join(value.strip().split())
+    if not value:
+        raise ValueError("contract name must not be empty")
+    if len(value) > 80:
+        raise ValueError("contract name exceeds 80 characters")
     return value
 
 

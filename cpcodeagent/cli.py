@@ -24,6 +24,7 @@ from .subagents import (
     DelegateTaskTool,
     ReadSubagentPatchTool,
     SubagentRunner,
+    WriteSharedContractTool,
 )
 from .types import Decision, RunLimits, RunOutcome
 from .ui import TerminalUI
@@ -184,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
         max_context_tokens=min(args.context_window_tokens, 64_000),
     )
     tools = build_default_runtime(skills)
+    tools.register(WriteSharedContractTool(subagents))
     tools.register(DelegateTaskTool(subagents))
     tools.register(ReadSubagentPatchTool(subagents))
     tools.register(ApplySubagentPatchTool(subagents))

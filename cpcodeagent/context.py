@@ -521,10 +521,13 @@ Rules:
 - Keep plans outcome-oriented, update an item before and after working on it, and revise
   the complete plan when evidence changes. Call plan_write in its own tool step.
 - Use tools for facts and actions; never claim an action you did not observe.
-- Delegate only a bounded, independent investigation or patch when a fresh context would
-  keep this trajectory cleaner. inspect children are read-only; patch children edit an
-  isolated overlay and return an artifact. For an accepted patch, call read_subagent_patch,
-  judge its diff, then call apply_subagent_patch before reading or testing parent files.
+- Delegate tightly coupled files to one child when practical. Before splitting patch work
+  that shares DOM IDs, schemas, class names, or runtime interfaces, call write_shared_contract
+  once and pass its exact contract_id to every related delegate_task.
+- Delegate only bounded work where a fresh context keeps this trajectory cleaner. inspect
+  children are read-only; patch children edit an isolated overlay and return an artifact.
+  For an accepted patch, call read_subagent_patch, judge its diff and contract ID, then call
+  apply_subagent_patch before reading or testing parent files.
 - A child result is evidence, not a decision. Judge it yourself and keep ownership of the
   current plan and final answer. Children cannot create other children.
 - Treat a policy denial as a hard boundary and choose another approach.

@@ -119,9 +119,9 @@ auditable in the Journal.
 
 ## Bounded child agents
 
-The parent can call one `delegate_task(task, mode)` tool when a bounded investigation would
-otherwise fill its context with low-level exploration. Delegation is intentionally not a
-general agent graph:
+The parent can call `delegate_task(task, mode, contract_id?)` when a bounded investigation
+would otherwise fill its context with low-level exploration. Delegation is intentionally not
+a general agent graph:
 
 ```text
 parent tool call
@@ -129,10 +129,30 @@ parent tool call
           ├── fresh ContextState (no parent transcript, plan, summary, or memory)
           ├── separate Journal and 12-step budget
           ├── filtered tools (no delegate_task, therefore no grandchildren)
+          ├── optional immutable shared contract
           └── submit_result(summary, evidence, recommendation)
                          ↓
               bounded SubagentResult in parent context
 ```
+
+Tightly coupled files stay in one child task when practical. If work must be split across
+children, the parent first calls `write_shared_contract(name, content)` once, then passes the
+returned content-addressed `contract_id` to every related delegation:
+
+```text
+write_shared_contract ──→ contract-<sha256>
+                              ├── delegate_task(index.html, contract_id)
+                              ├── delegate_task(styles.css, contract_id)
+                              └── delegate_task(app.js, contract_id)
+```
+
+Contracts are short Markdown interface specifications stored at
+`<journal-dir>/_subagents/<session-id>/contracts/`. They are immutable: changing their name
+or content creates a new ID. Each child receives the exact same read-only text but no sibling
+trajectory, and each patch records the contract ID used to produce it. A child that discovers
+an invalid contract reports the conflict through its normal structured result; only the
+parent can publish a revised contract and re-delegate work. Contracts constrain interfaces
+but cannot grant tools, permissions, network access, or workspace authority.
 
 `inspect` children share the parent workspace only through read tools; write and command
 tools are absent. `patch` children receive a persistent copied workspace. Their writes never

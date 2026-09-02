@@ -129,6 +129,8 @@ class TerminalUI:
             self._tool_names[call.id] = call.name
             if call.name == "plan_write":
                 detail = "updating execution plan"
+            elif call.name == "write_shared_contract":
+                detail = f"contract {call.arguments.get('name', '?')}"
             elif call.name == "delegate_task":
                 mode = str(call.arguments.get("mode", "inspect"))
                 task = _one_line(str(call.arguments.get("task", "")), 90)
@@ -160,6 +162,16 @@ class TerminalUI:
                             border_style="cyan",
                             expand=False,
                         )
+                    )
+                    continue
+                if name == "write_shared_contract":
+                    try:
+                        payload = json.loads(result.output)
+                    except (TypeError, ValueError):
+                        payload = {}
+                    contract_id = str(payload.get("contract_id", "created"))
+                    self.console.print(
+                        f"[green]✓ shared contract[/green] [dim]{contract_id}[/dim]"
                     )
                     continue
                 if name == "delegate_task":

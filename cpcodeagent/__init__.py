@@ -17,10 +17,13 @@ from .subagents import (
     PatchArtifact,
     PatchChange,
     ReadSubagentPatchTool,
+    SharedContract,
+    SharedContractStore,
     SubagentMode,
     SubagentResult,
     SubagentRunner,
     SubagentStatus,
+    WriteSharedContractTool,
 )
 from .tools import ToolRuntime
 from .types import RunEvent, RunEventKind, RunLimits, RunOutcome
@@ -62,6 +65,8 @@ __all__ = [
     "Session",
     "SessionState",
     "SessionStore",
+    "SharedContract",
+    "SharedContractStore",
     "SkillRegistry",
     "SubagentMode",
     "SubagentResult",
@@ -70,4 +75,5 @@ __all__ = [
     "TerminalUI",
     "ToolRuntime",
     "TurnState",
+    "WriteSharedContractTool",
 ]
