@@ -93,6 +93,16 @@ class EffectContract:
     ) -> EffectContract:
         return cls(RecoveryMode.VERIFY_FILES, (before,), (after,))
 
+    @classmethod
+    def file_transitions(
+        cls,
+        before: tuple[FileCondition, ...],
+        after: tuple[FileCondition, ...],
+    ) -> EffectContract:
+        """Describe one retryable action spanning several deterministic files."""
+
+        return cls(RecoveryMode.VERIFY_FILES, before, after)
+
     def inspect(self, executor: Executor) -> EffectState:
         if self.mode is not RecoveryMode.VERIFY_FILES:
             raise ValueError(f"Cannot inspect a {self.mode.value} recovery contract")
@@ -100,7 +110,13 @@ class EffectContract:
         # bytes is both a valid precondition and an already-satisfied effect.
         if self.after and all(condition.matches(executor) for condition in self.after):
             return EffectState.APPLIED
-        if self.before and all(condition.matches(executor) for condition in self.before):
+        # A multi-file action may stop after applying only some files. It remains
+        # safely resumable while every path still matches either its recorded
+        # precondition or postcondition. Any third state is a real conflict.
+        if self.before and all(
+            before.matches(executor) or after.matches(executor)
+            for before, after in zip(self.before, self.after, strict=True)
+        ):
             return EffectState.NOT_APPLIED
         return EffectState.CONFLICT
 

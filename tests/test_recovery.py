@@ -10,7 +10,14 @@ from cpcodeagent.executor import ExecutionEnv, LocalExecutor
 from cpcodeagent.journal import EventKind, Journal
 from cpcodeagent.kernel import Harness
 from cpcodeagent.model import ScriptedModel
-from cpcodeagent.recovery import ActionLedger, ActionState, EffectContract
+from cpcodeagent.recovery import (
+    ActionLedger,
+    ActionState,
+    EffectContract,
+    EffectState,
+    FileCondition,
+    content_digest,
+)
 from cpcodeagent.tools import Tool, ToolExecution, ToolRuntime
 from cpcodeagent.types import Action, Capability, ModelResponse, RunStatus, ToolCall
 
@@ -57,6 +64,27 @@ class OpaqueSideEffectTool(Tool):
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_partial_multi_file_transition_is_resumable_until_a_path_diverges(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            executor = LocalExecutor(directory)
+            Path(directory, "a.txt").write_text("old-a", encoding="utf-8")
+            Path(directory, "b.txt").write_text("old-b", encoding="utf-8")
+            contract = EffectContract.file_transitions(
+                (
+                    FileCondition("a.txt", content_digest("old-a")),
+                    FileCondition("b.txt", content_digest("old-b")),
+                ),
+                (
+                    FileCondition("a.txt", content_digest("new-a")),
+                    FileCondition("b.txt", content_digest("new-b")),
+                ),
+            )
+
+            Path(directory, "a.txt").write_text("new-a", encoding="utf-8")
+            self.assertEqual(contract.inspect(executor), EffectState.NOT_APPLIED)
+            Path(directory, "b.txt").write_text("external", encoding="utf-8")
+            self.assertEqual(contract.inspect(executor), EffectState.CONFLICT)
+
     def test_unknown_commit_is_not_replayed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)

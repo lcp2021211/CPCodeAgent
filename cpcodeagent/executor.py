@@ -119,6 +119,17 @@ class Executor:
             if os.path.exists(temporary):
                 os.unlink(temporary)
 
+    def delete_file(self, path: str) -> None:
+        """Delete one confined regular file and durably persist the directory entry."""
+
+        target = self.resolve(path)
+        if not target.exists():
+            return
+        if not target.is_file() or target.is_symlink():
+            raise ExecutionError("NOT_A_FILE", f"Path is not a regular file: {path}")
+        target.unlink()
+        _fsync_directory(target.parent)
+
     def discard_staged_writes(
         self,
         operation_id: str,

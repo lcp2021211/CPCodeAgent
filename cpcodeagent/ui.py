@@ -133,6 +133,8 @@ class TerminalUI:
                 mode = str(call.arguments.get("mode", "inspect"))
                 task = _one_line(str(call.arguments.get("task", "")), 90)
                 detail = f"[sub:{mode}] {task}"
+            elif call.name in {"read_subagent_patch", "apply_subagent_patch"}:
+                detail = f"artifact {call.arguments.get('artifact_id', '?')}"
             else:
                 detail = _brief(call.arguments)
             self.console.print(
@@ -169,6 +171,14 @@ class TerminalUI:
                     summary = str(payload.get("summary", result.output))
                     self.console.print(
                         f"[green]✓ subagent {status}[/green] [dim]{_one_line(summary)}[/dim]"
+                    )
+                    continue
+                if name == "read_subagent_patch":
+                    self.console.print("[green]✓ patch preview ready[/green]")
+                    continue
+                if name == "apply_subagent_patch":
+                    self.console.print(
+                        f"[green]✓ patch applied[/green] [dim]{_one_line(result.output)}[/dim]"
                     )
                     continue
                 detail = _one_line(result.output)

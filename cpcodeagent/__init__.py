@@ -12,7 +12,11 @@ from .recovery import ActionLedger, ActionState, EffectContract, EffectState, Re
 from .session import Session, SessionState, SessionStore, TurnState
 from .skills import SkillRegistry
 from .subagents import (
+    ApplySubagentPatchTool,
     DelegateTaskTool,
+    PatchArtifact,
+    PatchChange,
+    ReadSubagentPatchTool,
     SubagentMode,
     SubagentResult,
     SubagentRunner,
@@ -25,6 +29,7 @@ from .ui import TerminalUI
 __all__ = [
     "ActionLedger",
     "ActionState",
+    "ApplySubagentPatchTool",
     "ContextEngine",
     "ContextState",
     "DelegateTaskTool",
@@ -40,9 +45,12 @@ __all__ = [
     "MemoryScope",
     "MemoryStore",
     "OpenAICompatibleModel",
+    "PatchArtifact",
+    "PatchChange",
     "PlanItem",
     "PlanState",
     "PlanStatus",
+    "ReadSubagentPatchTool",
     "RecoveryMode",
     "ResilientModel",
     "RunEvent",
