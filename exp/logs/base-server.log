@@ -1,0 +1,383 @@
+nohup: ignoring input
+[INFO:swift] Successfully registered `/root/autodl-tmp/LXP/CPCodeAgent/qwen35_9b_lora/.venv/lib/python3.12/site-packages/swift/dataset/data/dataset_info.json`.
+[INFO:swift] rank: -1, local_rank: -1, world_size: 1, local_world_size: 1
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[WARNING:swift] Please install the package: `pip install "decord" -U`.
+[INFO:swift] Setting args.lazy_tokenize: True
+[INFO:swift] args: DeployArguments(use_ray=False, ray_exp_name=None, device_groups=None, model='/root/autodl-tmp/LXP/.cache/modelscope/models/Qwen--Qwen3.5-9B/snapshots/master', model_type='qwen3_5', model_revision=None, task_type='causal_lm', torch_dtype=torch.bfloat16, attn_impl='sdpa', experts_impl=None, new_special_tokens=[], num_labels=None, problem_type=None, rope_scaling=None, device_map=None, max_memory={}, max_model_len=None, local_repo_path=None, init_strategy=None, template='qwen3_5', system=None, max_length=16384, truncation_strategy='delete', max_pixels=None, agent_template=None, norm_bbox=None, use_chat_template=True, padding_side='right', padding_free=False, loss_scale='default+ignore_empty_think', sequence_parallel_size=1, is_binary_loss_scale=None, template_backend='swift', response_prefix=None, enable_thinking=False, preserve_thinking=None, add_non_thinking_prefix=True, disable_ignore_empty_think=False, dataset=[], val_dataset=[], cached_dataset=[], cached_val_dataset=[], split_dataset_ratio=0.0, data_seed=42, dataset_num_proc=1, load_from_cache_file=False, dataset_shuffle=True, val_dataset_shuffle=False, streaming=False, interleave_prob=None, stopping_strategy='first_exhausted', shuffle_buffer_size=1000, download_mode='reuse_dataset_if_exists', columns={}, strict=False, remove_unused_columns=True, disable_auto_column_mapping=False, model_name=None, model_author=None, custom_dataset_info=[], quant_method=None, quant_bits=None, hqq_axis=None, bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_quant_type='nf4', bnb_4bit_use_double_quant=True, bnb_4bit_quant_storage=None, max_new_tokens=2048, temperature=0.0, top_k=None, top_p=None, repetition_penalty=None, num_beams=1, stream=False, stop_words=[], logprobs=False, top_logprobs=None, structured_outputs_regex=None, tuner_backend='peft', tuner_type='lora', adapters=[], external_plugins=[], custom_register_path=[], seed=42, model_kwargs={}, enable_npu_model_patch=True, load_args=True, load_data_args=False, packing=False, packing_length=None, packing_num_proc=1, packing_strategy='binpack', lazy_tokenize=True, use_hf=True, hub_token=None, ddp_timeout=18000000, ddp_backend=None, ignore_args_error=False, use_swift_lora=False, vllm_gpu_memory_utilization=0.9, vllm_tensor_parallel_size=1, vllm_pipeline_parallel_size=1, vllm_enable_expert_parallel=False, vllm_max_num_seqs=256, vllm_max_model_len=None, vllm_disable_custom_all_reduce=True, vllm_enforce_eager=False, vllm_limit_mm_per_prompt=None, vllm_max_lora_rank=16, vllm_enable_prefix_caching=None, vllm_use_async_engine=True, vllm_quantization=None, vllm_reasoning_parser=None, vllm_disable_cascade_attn=False, vllm_mm_processor_cache_gb=None, vllm_speculative_config=None, vllm_engine_kwargs={}, vllm_data_parallel_size=1, sglang_tp_size=1, sglang_pp_size=1, sglang_dp_size=1, sglang_ep_size=1, sglang_enable_ep_moe=False, sglang_mem_fraction_static=None, sglang_context_length=None, sglang_disable_cuda_graph=False, sglang_quantization=None, sglang_kv_cache_dtype='auto', sglang_enable_dp_attention=False, sglang_disable_custom_all_reduce=True, sglang_speculative_algorithm=None, sglang_speculative_num_steps=None, sglang_speculative_eagle_topk=None, sglang_speculative_num_draft_tokens=None, lmdeploy_tp=1, lmdeploy_session_len=None, lmdeploy_cache_max_entry_count=0.8, lmdeploy_quant_policy=0, lmdeploy_vision_batch_size=1, merge_lora=False, safe_serialization=True, max_shard_size='5GB', infer_backend='transformers', result_path=None, write_batch_size=1000, metric=None, max_batch_size=1, val_dataset_sample=None, reranker_use_activation=True, host='127.0.0.1', port=8000, api_key='local-eval', ssl_keyfile=None, ssl_certfile=None, owned_by='swift', served_model_name='qwen35-9b-base', verbose=False, log_interval=20, log_level='info', max_logprobs=20)
+[INFO:swift] Global seed set to 42
+[WARNING:swift] Please install the package: `pip install "decord" -U`.
+[INFO:swift] attn_impl: sdpa
+[INFO:swift] Setting max_ratio: 200. You can adjust this hyperparameter through the environment variable: `MAX_RATIO`.
+[INFO:swift] Setting frame_factor: 2. You can adjust this hyperparameter through the environment variable: `FRAME_FACTOR`.
+[INFO:swift] Setting fps: 2.0. You can adjust this hyperparameter through the environment variable: `FPS`.
+[INFO:swift] Setting fps_min_frames: 4. You can adjust this hyperparameter through the environment variable: `FPS_MIN_FRAMES`.
+[INFO:swift] Setting fps_max_frames: 768. You can adjust this hyperparameter through the environment variable: `FPS_MAX_FRAMES`.
+[INFO:swift] Setting image_max_token_num: 16384. You can adjust this hyperparameter through the environment variable: `IMAGE_MAX_TOKEN_NUM`.
+[INFO:swift] Setting image_min_token_num: 4. You can adjust this hyperparameter through the environment variable: `IMAGE_MIN_TOKEN_NUM`.
+[INFO:swift] Setting spatial_merge_size: 2. You can adjust this hyperparameter through the environment variable: `SPATIAL_MERGE_SIZE`.
+[INFO:swift] Setting video_max_token_num: 768. You can adjust this hyperparameter through the environment variable: `VIDEO_MAX_TOKEN_NUM`.
+[INFO:swift] Setting video_min_token_num: 128. You can adjust this hyperparameter through the environment variable: `VIDEO_MIN_TOKEN_NUM`.
+[INFO:swift] model_kwargs: {'device_map': 'cuda:0', 'dtype': torch.bfloat16}
+[ERROR] `min_frames` is part of Qwen3VLVideoProcessorInitKwargs, but not documented. Make sure to add it to the docstring of the function in /root/autodl-tmp/LXP/CPCodeAgent/qwen35_9b_lora/.venv/lib/python3.12/site-packages/transformers/models/qwen3_vl/video_processing_qwen3_vl.py.
+[ERROR] `max_frames` is part of Qwen3VLVideoProcessorInitKwargs, but not documented. Make sure to add it to the docstring of the function in /root/autodl-tmp/LXP/CPCodeAgent/qwen35_9b_lora/.venv/lib/python3.12/site-packages/transformers/models/qwen3_vl/video_processing_qwen3_vl.py.
+Loading weights:   0%|          | 0/760 [00:00<?, ?it/s]Loading weights:   0%|          | 1/760 [00:01<12:43,  1.01s/it]Loading weights:   0%|          | 2/760 [00:02<13:23,  1.06s/it]Loading weights:   2%|▏         | 13/760 [00:02<01:26,  8.68it/s]Loading weights:   2%|▏         | 17/760 [00:02<01:05, 11.34it/s]Loading weights:   3%|▎         | 25/760 [00:02<00:39, 18.40it/s]Loading weights:   4%|▍         | 30/760 [00:02<00:32, 22.20it/s]Loading weights:   5%|▌         | 41/760 [00:02<00:21, 33.22it/s]Loading weights:   6%|▌         | 47/760 [00:03<00:25, 27.67it/s]Loading weights:   8%|▊         | 62/760 [00:03<00:16, 43.19it/s]Loading weights:   9%|▉         | 69/760 [00:03<00:17, 40.45it/s]Loading weights:  11%|█         | 80/760 [00:03<00:16, 41.20it/s]Loading weights:  12%|█▏        | 94/760 [00:03<00:12, 53.04it/s]Loading weights:  13%|█▎        | 101/760 [00:04<00:15, 41.88it/s]Loading weights:  15%|█▌        | 114/760 [00:04<00:12, 52.72it/s]Loading weights:  16%|█▌        | 121/760 [00:04<00:13, 47.95it/s]Loading weights:  18%|█▊        | 133/760 [00:04<00:11, 56.18it/s]Loading weights:  18%|█▊        | 140/760 [00:04<00:11, 52.23it/s]Loading weights:  19%|█▉        | 147/760 [00:04<00:11, 55.53it/s]Loading weights:  20%|██        | 154/760 [00:05<00:14, 41.13it/s]Loading weights:  22%|██▏       | 167/760 [00:05<00:11, 53.69it/s]Loading weights:  23%|██▎       | 174/760 [00:05<00:12, 48.64it/s]Loading weights:  24%|██▍       | 186/760 [00:05<00:12, 47.35it/s]Loading weights:  26%|██▋       | 200/760 [00:05<00:09, 59.59it/s]Loading weights:  27%|██▋       | 207/760 [00:06<00:12, 44.36it/s]Loading weights:  29%|██▉       | 221/760 [00:06<00:09, 56.96it/s]Loading weights:  30%|███       | 228/760 [00:06<00:10, 49.90it/s]Loading weights:  31%|███▏      | 239/760 [00:06<00:09, 56.11it/s]Loading weights:  32%|███▏      | 246/760 [00:06<00:09, 56.16it/s]Loading weights:  33%|███▎      | 253/760 [00:06<00:09, 53.97it/s]Loading weights:  34%|███▍      | 259/760 [00:07<00:11, 42.75it/s]Loading weights:  35%|███▌      | 266/760 [00:07<00:10, 45.79it/s]Loading weights:  37%|███▋      | 278/760 [00:07<00:08, 55.74it/s]Loading weights:  37%|███▋      | 284/760 [00:07<00:08, 54.14it/s]Loading weights:  38%|███▊      | 292/760 [00:07<00:08, 55.09it/s]Loading weights:  39%|███▉      | 298/760 [00:07<00:08, 53.37it/s]Loading weights:  40%|████      | 306/760 [00:08<00:08, 53.95it/s]Loading weights:  41%|████      | 312/760 [00:08<00:10, 41.96it/s]Loading weights:  42%|████▏     | 319/760 [00:08<00:09, 45.00it/s]Loading weights:  44%|████▎     | 331/760 [00:08<00:07, 54.81it/s]Loading weights:  44%|████▍     | 337/760 [00:08<00:07, 53.33it/s]Loading weights:  45%|████▌     | 345/760 [00:08<00:07, 53.91it/s]Loading weights:  46%|████▌     | 351/760 [00:08<00:07, 52.67it/s]Loading weights:  47%|████▋     | 359/760 [00:09<00:07, 54.42it/s]Loading weights:  48%|████▊     | 365/760 [00:09<00:09, 41.82it/s]Loading weights:  49%|████▉     | 372/760 [00:09<00:08, 45.51it/s]Loading weights:  51%|█████     | 384/760 [00:09<00:06, 55.29it/s]Loading weights:  51%|█████▏    | 390/760 [00:09<00:06, 53.77it/s]Loading weights:  52%|█████▏    | 398/760 [00:09<00:06, 53.82it/s]Loading weights:  53%|█████▎    | 404/760 [00:09<00:06, 52.46it/s]Loading weights:  54%|█████▍    | 412/760 [00:10<00:06, 53.77it/s]Loading weights:  55%|█████▌    | 418/760 [00:10<00:08, 42.17it/s]Loading weights:  56%|█████▌    | 425/760 [00:10<00:07, 45.63it/s]Loading weights:  62%|██████▏   | 469/760 [00:10<00:02, 129.89it/s]Loading weights:  68%|██████▊   | 516/760 [00:10<00:01, 209.42it/s]Loading weights:  75%|███████▌  | 570/760 [00:10<00:00, 292.30it/s]Loading weights:  80%|████████  | 609/760 [00:10<00:00, 314.45it/s]Loading weights:  87%|████████▋ | 659/760 [00:10<00:00, 362.82it/s]Loading weights:  94%|█████████▍| 717/760 [00:11<00:00, 418.12it/s]Loading weights: 100%|██████████| 760/760 [00:11<00:00, 67.96it/s] 
+[INFO:swift] default_system: None
+[INFO:swift] max_length: 16384
+[INFO:swift] response_prefix: None
+[INFO:swift] agent_template: qwen3_5
+[INFO:swift] norm_bbox: norm1000
+[INFO:swift] Setting ROOT_IMAGE_DIR: None. You can adjust this hyperparameter through the environment variable: `ROOT_IMAGE_DIR`.
+[INFO:swift] Setting QWENVL_BBOX_FORMAT: legacy. You can adjust this hyperparameter through the environment variable: `QWENVL_BBOX_FORMAT`.
+[INFO:swift] model: Qwen3_5ForConditionalGeneration(
+  (model): Qwen3_5Model(
+    (visual): Qwen3_5VisionModel(
+      (patch_embed): Qwen3_5VisionPatchEmbed(
+        (proj): Conv3d(3, 1152, kernel_size=(2, 16, 16), stride=(2, 16, 16))
+      )
+      (pos_embed): Embedding(2304, 1152)
+      (rotary_pos_emb): Qwen3_5VisionRotaryEmbedding()
+      (blocks): ModuleList(
+        (0-26): 27 x Qwen3_5VisionBlock(
+          (norm1): LayerNorm((1152,), eps=1e-06, elementwise_affine=True)
+          (norm2): LayerNorm((1152,), eps=1e-06, elementwise_affine=True)
+          (attn): Qwen3_5VisionAttention(
+            (qkv): Linear(in_features=1152, out_features=3456, bias=True)
+            (proj): Linear(in_features=1152, out_features=1152, bias=True)
+          )
+          (mlp): Qwen3_5VisionMLP(
+            (linear_fc1): Linear(in_features=1152, out_features=4304, bias=True)
+            (linear_fc2): Linear(in_features=4304, out_features=1152, bias=True)
+            (act_fn): GELUTanh()
+          )
+        )
+      )
+      (merger): Qwen3_5VisionPatchMerger(
+        (norm): LayerNorm((1152,), eps=1e-06, elementwise_affine=True)
+        (linear_fc1): Linear(in_features=4608, out_features=4608, bias=True)
+        (act_fn): GELU(approximate='none')
+        (linear_fc2): Linear(in_features=4608, out_features=4096, bias=True)
+      )
+    )
+    (language_model): Qwen3_5TextModel(
+      (embed_tokens): Embedding(248320, 4096)
+      (layers): ModuleList(
+        (0-2): 3 x Qwen3_5DecoderLayer(
+          (linear_attn): Qwen3_5GatedDeltaNet(
+            (conv1d): Conv1d(8192, 8192, kernel_size=(4,), stride=(1,), padding=(3,), groups=8192, bias=False)
+            (norm): Qwen3_5RMSNormGated()
+            (out_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (in_proj_qkv): Linear(in_features=4096, out_features=8192, bias=False)
+            (in_proj_z): Linear(in_features=4096, out_features=4096, bias=False)
+            (in_proj_b): Linear(in_features=4096, out_features=32, bias=False)
+            (in_proj_a): Linear(in_features=4096, out_features=32, bias=False)
+          )
+          (mlp): Qwen3_5MLP(
+            (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+            (act_fn): SiLUActivation()
+          )
+          (input_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+          (post_attention_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+        )
+        (3): Qwen3_5DecoderLayer(
+          (self_attn): Qwen3_5Attention(
+            (q_proj): Linear(in_features=4096, out_features=8192, bias=False)
+            (k_proj): Linear(in_features=4096, out_features=1024, bias=False)
+            (v_proj): Linear(in_features=4096, out_features=1024, bias=False)
+            (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (q_norm): Qwen3_5RMSNorm((256,), eps=1e-06)
+            (k_norm): Qwen3_5RMSNorm((256,), eps=1e-06)
+          )
+          (mlp): Qwen3_5MLP(
+            (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+            (act_fn): SiLUActivation()
+          )
+          (input_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+          (post_attention_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+        )
+        (4-6): 3 x Qwen3_5DecoderLayer(
+          (linear_attn): Qwen3_5GatedDeltaNet(
+            (conv1d): Conv1d(8192, 8192, kernel_size=(4,), stride=(1,), padding=(3,), groups=8192, bias=False)
+            (norm): Qwen3_5RMSNormGated()
+            (out_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (in_proj_qkv): Linear(in_features=4096, out_features=8192, bias=False)
+            (in_proj_z): Linear(in_features=4096, out_features=4096, bias=False)
+            (in_proj_b): Linear(in_features=4096, out_features=32, bias=False)
+            (in_proj_a): Linear(in_features=4096, out_features=32, bias=False)
+          )
+          (mlp): Qwen3_5MLP(
+            (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+            (act_fn): SiLUActivation()
+          )
+          (input_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+          (post_attention_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+        )
+        (7): Qwen3_5DecoderLayer(
+          (self_attn): Qwen3_5Attention(
+            (q_proj): Linear(in_features=4096, out_features=8192, bias=False)
+            (k_proj): Linear(in_features=4096, out_features=1024, bias=False)
+            (v_proj): Linear(in_features=4096, out_features=1024, bias=False)
+            (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (q_norm): Qwen3_5RMSNorm((256,), eps=1e-06)
+            (k_norm): Qwen3_5RMSNorm((256,), eps=1e-06)
+          )
+          (mlp): Qwen3_5MLP(
+            (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+            (act_fn): SiLUActivation()
+          )
+          (input_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+          (post_attention_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+        )
+        (8-10): 3 x Qwen3_5DecoderLayer(
+          (linear_attn): Qwen3_5GatedDeltaNet(
+            (conv1d): Conv1d(8192, 8192, kernel_size=(4,), stride=(1,), padding=(3,), groups=8192, bias=False)
+            (norm): Qwen3_5RMSNormGated()
+            (out_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (in_proj_qkv): Linear(in_features=4096, out_features=8192, bias=False)
+            (in_proj_z): Linear(in_features=4096, out_features=4096, bias=False)
+            (in_proj_b): Linear(in_features=4096, out_features=32, bias=False)
+            (in_proj_a): Linear(in_features=4096, out_features=32, bias=False)
+          )
+          (mlp): Qwen3_5MLP(
+            (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+            (act_fn): SiLUActivation()
+          )
+          (input_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+          (post_attention_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+        )
+        (11): Qwen3_5DecoderLayer(
+          (self_attn): Qwen3_5Attention(
+            (q_proj): Linear(in_features=4096, out_features=8192, bias=False)
+            (k_proj): Linear(in_features=4096, out_features=1024, bias=False)
+            (v_proj): Linear(in_features=4096, out_features=1024, bias=False)
+            (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (q_norm): Qwen3_5RMSNorm((256,), eps=1e-06)
+            (k_norm): Qwen3_5RMSNorm((256,), eps=1e-06)
+          )
+          (mlp): Qwen3_5MLP(
+            (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+            (act_fn): SiLUActivation()
+          )
+          (input_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+          (post_attention_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+        )
+        (12-14): 3 x Qwen3_5DecoderLayer(
+          (linear_attn): Qwen3_5GatedDeltaNet(
+            (conv1d): Conv1d(8192, 8192, kernel_size=(4,), stride=(1,), padding=(3,), groups=8192, bias=False)
+            (norm): Qwen3_5RMSNormGated()
+            (out_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (in_proj_qkv): Linear(in_features=4096, out_features=8192, bias=False)
+            (in_proj_z): Linear(in_features=4096, out_features=4096, bias=False)
+            (in_proj_b): Linear(in_features=4096, out_features=32, bias=False)
+            (in_proj_a): Linear(in_features=4096, out_features=32, bias=False)
+          )
+          (mlp): Qwen3_5MLP(
+            (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+            (act_fn): SiLUActivation()
+          )
+          (input_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+          (post_attention_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+        )
+        (15): Qwen3_5DecoderLayer(
+          (self_attn): Qwen3_5Attention(
+            (q_proj): Linear(in_features=4096, out_features=8192, bias=False)
+            (k_proj): Linear(in_features=4096, out_features=1024, bias=False)
+            (v_proj): Linear(in_features=4096, out_features=1024, bias=False)
+            (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (q_norm): Qwen3_5RMSNorm((256,), eps=1e-06)
+            (k_norm): Qwen3_5RMSNorm((256,), eps=1e-06)
+          )
+          (mlp): Qwen3_5MLP(
+            (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+            (act_fn): SiLUActivation()
+          )
+          (input_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+          (post_attention_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+        )
+        (16-18): 3 x Qwen3_5DecoderLayer(
+          (linear_attn): Qwen3_5GatedDeltaNet(
+            (conv1d): Conv1d(8192, 8192, kernel_size=(4,), stride=(1,), padding=(3,), groups=8192, bias=False)
+            (norm): Qwen3_5RMSNormGated()
+            (out_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (in_proj_qkv): Linear(in_features=4096, out_features=8192, bias=False)
+            (in_proj_z): Linear(in_features=4096, out_features=4096, bias=False)
+            (in_proj_b): Linear(in_features=4096, out_features=32, bias=False)
+            (in_proj_a): Linear(in_features=4096, out_features=32, bias=False)
+          )
+          (mlp): Qwen3_5MLP(
+            (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+            (act_fn): SiLUActivation()
+          )
+          (input_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+          (post_attention_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+        )
+        (19): Qwen3_5DecoderLayer(
+          (self_attn): Qwen3_5Attention(
+            (q_proj): Linear(in_features=4096, out_features=8192, bias=False)
+            (k_proj): Linear(in_features=4096, out_features=1024, bias=False)
+            (v_proj): Linear(in_features=4096, out_features=1024, bias=False)
+            (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (q_norm): Qwen3_5RMSNorm((256,), eps=1e-06)
+            (k_norm): Qwen3_5RMSNorm((256,), eps=1e-06)
+          )
+          (mlp): Qwen3_5MLP(
+            (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+            (act_fn): SiLUActivation()
+          )
+          (input_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+          (post_attention_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+        )
+        (20-22): 3 x Qwen3_5DecoderLayer(
+          (linear_attn): Qwen3_5GatedDeltaNet(
+            (conv1d): Conv1d(8192, 8192, kernel_size=(4,), stride=(1,), padding=(3,), groups=8192, bias=False)
+            (norm): Qwen3_5RMSNormGated()
+            (out_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (in_proj_qkv): Linear(in_features=4096, out_features=8192, bias=False)
+            (in_proj_z): Linear(in_features=4096, out_features=4096, bias=False)
+            (in_proj_b): Linear(in_features=4096, out_features=32, bias=False)
+            (in_proj_a): Linear(in_features=4096, out_features=32, bias=False)
+          )
+          (mlp): Qwen3_5MLP(
+            (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+            (act_fn): SiLUActivation()
+          )
+          (input_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+          (post_attention_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+        )
+        (23): Qwen3_5DecoderLayer(
+          (self_attn): Qwen3_5Attention(
+            (q_proj): Linear(in_features=4096, out_features=8192, bias=False)
+            (k_proj): Linear(in_features=4096, out_features=1024, bias=False)
+            (v_proj): Linear(in_features=4096, out_features=1024, bias=False)
+            (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (q_norm): Qwen3_5RMSNorm((256,), eps=1e-06)
+            (k_norm): Qwen3_5RMSNorm((256,), eps=1e-06)
+          )
+          (mlp): Qwen3_5MLP(
+            (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+            (act_fn): SiLUActivation()
+          )
+          (input_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+          (post_attention_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+        )
+        (24-26): 3 x Qwen3_5DecoderLayer(
+          (linear_attn): Qwen3_5GatedDeltaNet(
+            (conv1d): Conv1d(8192, 8192, kernel_size=(4,), stride=(1,), padding=(3,), groups=8192, bias=False)
+            (norm): Qwen3_5RMSNormGated()
+            (out_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (in_proj_qkv): Linear(in_features=4096, out_features=8192, bias=False)
+            (in_proj_z): Linear(in_features=4096, out_features=4096, bias=False)
+            (in_proj_b): Linear(in_features=4096, out_features=32, bias=False)
+            (in_proj_a): Linear(in_features=4096, out_features=32, bias=False)
+          )
+          (mlp): Qwen3_5MLP(
+            (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+            (act_fn): SiLUActivation()
+          )
+          (input_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+          (post_attention_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+        )
+        (27): Qwen3_5DecoderLayer(
+          (self_attn): Qwen3_5Attention(
+            (q_proj): Linear(in_features=4096, out_features=8192, bias=False)
+            (k_proj): Linear(in_features=4096, out_features=1024, bias=False)
+            (v_proj): Linear(in_features=4096, out_features=1024, bias=False)
+            (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (q_norm): Qwen3_5RMSNorm((256,), eps=1e-06)
+            (k_norm): Qwen3_5RMSNorm((256,), eps=1e-06)
+          )
+          (mlp): Qwen3_5MLP(
+            (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+            (act_fn): SiLUActivation()
+          )
+          (input_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+          (post_attention_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+        )
+        (28-30): 3 x Qwen3_5DecoderLayer(
+          (linear_attn): Qwen3_5GatedDeltaNet(
+            (conv1d): Conv1d(8192, 8192, kernel_size=(4,), stride=(1,), padding=(3,), groups=8192, bias=False)
+            (norm): Qwen3_5RMSNormGated()
+            (out_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (in_proj_qkv): Linear(in_features=4096, out_features=8192, bias=False)
+            (in_proj_z): Linear(in_features=4096, out_features=4096, bias=False)
+            (in_proj_b): Linear(in_features=4096, out_features=32, bias=False)
+            (in_proj_a): Linear(in_features=4096, out_features=32, bias=False)
+          )
+          (mlp): Qwen3_5MLP(
+            (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+            (act_fn): SiLUActivation()
+          )
+          (input_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+          (post_attention_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+        )
+        (31): Qwen3_5DecoderLayer(
+          (self_attn): Qwen3_5Attention(
+            (q_proj): Linear(in_features=4096, out_features=8192, bias=False)
+            (k_proj): Linear(in_features=4096, out_features=1024, bias=False)
+            (v_proj): Linear(in_features=4096, out_features=1024, bias=False)
+            (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (q_norm): Qwen3_5RMSNorm((256,), eps=1e-06)
+            (k_norm): Qwen3_5RMSNorm((256,), eps=1e-06)
+          )
+          (mlp): Qwen3_5MLP(
+            (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+            (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+            (act_fn): SiLUActivation()
+          )
+          (input_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+          (post_attention_layernorm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+        )
+      )
+      (norm): Qwen3_5RMSNorm((4096,), eps=1e-06)
+      (rotary_emb): Qwen3_5TextRotaryEmbedding()
+    )
+  )
+  (lm_head): Linear(in_features=4096, out_features=248320, bias=False)
+)
+[INFO:swift] Start time of running main: 2026-09-03 16:47:55.591629
+[INFO:swift] swift.__version__: 4.5.2
+[INFO:swift] model_list: ['qwen35-9b-base']
+INFO:     Started server process [118836]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+[INFO:swift] {'num_prompt_tokens': 0, 'num_generated_tokens': 0, 'num_samples': 0, 'runtime': 20.09048222, 'samples/s': 0.0, 'tokens/s': 0.0}
+[INFO:swift] {'num_prompt_tokens': 0, 'num_generated_tokens': 0, 'num_samples': 0, 'runtime': 20.02022076, 'samples/s': 0.0, 'tokens/s': 0.0}
+[INFO:swift] {'num_prompt_tokens': 0, 'num_generated_tokens': 0, 'num_samples': 0, 'runtime': 20.02021086, 'samples/s': 0.0, 'tokens/s': 0.0}
+INFO:     127.0.0.1:56046 - "GET /v1/models HTTP/1.1" 200 OK
+[INFO:swift] {'num_prompt_tokens': 0, 'num_generated_tokens': 0, 'num_samples': 0, 'runtime': 20.0202105, 'samples/s': 0.0, 'tokens/s': 0.0}
+[INFO:swift] {'num_prompt_tokens': 0, 'num_generated_tokens': 0, 'num_samples': 0, 'runtime': 20.02022528, 'samples/s': 0.0, 'tokens/s': 0.0}
+[INFO:swift] {'num_prompt_tokens': 0, 'num_generated_tokens': 0, 'num_samples': 0, 'runtime': 20.01826537, 'samples/s': 0.0, 'tokens/s': 0.0}
+[INFO:swift] {'num_prompt_tokens': 0, 'num_generated_tokens': 0, 'num_samples': 0, 'runtime': 20.02022167, 'samples/s': 0.0, 'tokens/s': 0.0}
+[INFO:swift] {'num_prompt_tokens': 0, 'num_generated_tokens': 0, 'num_samples': 0, 'runtime': 20.01294818, 'samples/s': 0.0, 'tokens/s': 0.0}

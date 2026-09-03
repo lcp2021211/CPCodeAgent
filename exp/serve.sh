@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 1 || ( "$1" != "base" && "$1" != "lora" ) ]]; then
+  echo "Usage: $0 {base|lora}" >&2
+  exit 2
+fi
+ARM="$1"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=common.sh
+source "${SCRIPT_DIR}/common.sh"
+
+require_file "${TRAIN_PYTHON}"
+require_dir "${BASE_MODEL}"
+
+ARGS=(
+  --model "${BASE_MODEL}"
+  --use_hf true
+  --infer_backend transformers
+  --torch_dtype bfloat16
+  --attn_impl sdpa
+  --host "${HOST}"
+  --port "${PORT}"
+  --api_key "${API_KEY}"
+  --max_length "${SERVER_MAX_LENGTH}"
+  --truncation_strategy delete
+  --max_new_tokens "${SERVER_MAX_NEW_TOKENS}"
+  --temperature "${TEMPERATURE}"
+  --max_batch_size 1
+  --enable_thinking false
+  --add_non_thinking_prefix true
+  --no_verbose
+)
+
+if [[ "${ARM}" == "base" ]]; then
+  ARGS+=(--served_model_name "${BASE_SERVED_MODEL}")
+else
+  require_dir "${LORA_ADAPTER}"
+  ARGS+=(
+    --adapters "${LORA_ADAPTER}"
+    --served_model_name "${LORA_SERVED_MODEL}"
+  )
+fi
+
+export CUDA_VISIBLE_DEVICES
+exec "${TRAIN_PYTHON}" -m swift.cli.deploy "${ARGS[@]}"
+
