@@ -1,0 +1,337 @@
+{
+  "counts": {
+    "excluded_training_and_dev_instances": 51,
+    "in_domain": 25,
+    "out_domain": 25,
+    "out_domain_repositories": 25,
+    "total": 50
+  },
+  "created_at": "2026-09-03T10:31:33.175072+00:00",
+  "dataset": {
+    "dataset_id": "SWE-bench/SWE-smith",
+    "downloaded_at": "2026-08-21T17:22:28.829956+00:00",
+    "fingerprint": "7e75b7f644fe5b29",
+    "path": "/Users/lcp/Documents/try/CPCodeAgent/trajectory_experiments/data/swesmith_train",
+    "revision": "ea6d7173829c7ec8fa16c22055699ff2e9188091",
+    "split": "train",
+    "task_count": 59136
+  },
+  "frozen": true,
+  "instances": [
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__pz4s6nc1",
+      "problem_sha256": "a53ca0fb96e541113144ee2f537ba9622679bfa2559853848af88c87fffc3175",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__umh2s4t4",
+      "problem_sha256": "6591e7ce4600e3f8d0e3cfc3b897cc9e1402a7462f9c5ab9d45c8dd46a103508",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__s0mabtlb",
+      "problem_sha256": "e1c599abe69f7b7a60c5ebf6761011641de758352a7426dbe581f1d7ec0ff7a4",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_pm_remove_loop__nsb2asoa",
+      "problem_sha256": "991a9d35e59828d4bffeb98aa224df0e8eb693f73443855b8232ae6d60a7bdbc",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__aq9tgq2s",
+      "problem_sha256": "b82b79e3b45ad296bd8243f768cb8800d2270408e58eff002c50d832819bd53c",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__6xzckvyt",
+      "problem_sha256": "a65142acfdbee456908b5a566e41f07988aa5c914dc316a97789c6adeb36d2cf",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__7hwmy2j9",
+      "problem_sha256": "6b49c17fc1414cea7a256cdead25e45a44b0eabc3d71ad5dad94311f457114df",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_pm_class_rm_funcs__wq5px8hy",
+      "problem_sha256": "2875f940d9519ee3646da7616c0b615cc61060bb4ea2a4748b889dfe65874d1c",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__yy9r7fnx",
+      "problem_sha256": "be9b93b06678dedd86fa74857ad272226deadc8ca1156bfe94ac47076fa11234",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.lm_rewrite__r1lpv0si",
+      "problem_sha256": "7073b9d746c89d29521186719f07767c3c9b5d2280822aab4c5eb7a1bea3983c",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__klq32l1f",
+      "problem_sha256": "22c19bceffc7274818535e2ec62c792869c0afae6041d9ad81dcd2530a453c21",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__qc9m7fms",
+      "problem_sha256": "653787091b97871f8164ba3cc49cef32dfc40803cb55336ff8d0fe076080b05c",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__8o9o9sgv",
+      "problem_sha256": "58e2bc7c66f164474656f8149cad1816510f80167091efc8f6138104cbeebc5d",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_pm_ctrl_shuffle__uoyfmmhj",
+      "problem_sha256": "c28b1c081509d4e1035c70f299c43bb17a4d666f8c48b34b1737f374c4a3e32d",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__8kp29pqr",
+      "problem_sha256": "34be0279b847a8493fc80e53260fdc5aebe76ca7efa6e32563d3997e0de83db4",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_pm_ctrl_invert_if__eftwth18",
+      "problem_sha256": "27df30f0a9c8500828b49076d20c15b06c7e65a8267ce1b808ccba417e2b82a7",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__kvppyu2o",
+      "problem_sha256": "9a90bc720675b9a1b1d3ccec10abfbb6a07b9988c657bc64f50a0030cda40c4a",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__rxok9j5b",
+      "problem_sha256": "eb691d563eac06ac475fc55625e0093e06f44e26c3bc0768f77f6b2f3d07d1c6",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.combine_module__yhsse245",
+      "problem_sha256": "b53510dae3d9edc18b62ea599cb77bed26de930155c49558b6e5cbed2fdcbebc",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__pgadrxoh",
+      "problem_sha256": "7330bf68a8ffdd7467434da7f6eacbbc2bbf9db57c905c8a3fa21a32c59e87fa",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__nj76fynz",
+      "problem_sha256": "7bde4a8c2020c66a76f76c9f96cfa2290fd0fef0421487a7da33036104b88e78",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__n16i65ct",
+      "problem_sha256": "a68f6c2fdfc16f1538c8b1ce5036e02c01b09b35c77d8396727eb460d63da6d1",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__js2f84pw",
+      "problem_sha256": "12a414ce52c5969339f6cb63de58551448f79b0314e04300b77f482bed0d93f9",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_pm_ctrl_shuffle__b7ajfhpp",
+      "problem_sha256": "44c9974651e837a462c7ac43aa56eeaeb0d3edfa138ee511de99c72be21bf02c",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "in_domain",
+      "instance_id": "scanny__python-pptx.278b47b1.func_basic__07defkzb",
+      "problem_sha256": "383903a193b1514c32a128cfcdcb40a8b187d8ae03a6ca710cc56655af54aafd",
+      "repo": "swesmith/scanny__python-pptx.278b47b1"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "seperman__deepdiff.ed252022.lm_rewrite__oe0aicqi",
+      "problem_sha256": "330247376961cfa27186d6ba64beedd7e65d354e492a2fd1706cd58ed347b3aa",
+      "repo": "swesmith/seperman__deepdiff.ed252022"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "pdfminer__pdfminer.six.1a8bd2f7.func_basic__ujt8yw0h",
+      "problem_sha256": "dfa17a986425d4f693473574392e7ba10ed774104d26a1a71aef9f9ea9e46661",
+      "repo": "swesmith/pdfminer__pdfminer.six.1a8bd2f7"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "facebookresearch__hydra.0f03eb60.lm_rewrite__9mbfwm8f",
+      "problem_sha256": "38e19b419d4ab75cc724468e2312a27732db6ffb3e21e064f3c9181dc323b4a7",
+      "repo": "swesmith/facebookresearch__hydra.0f03eb60"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "rsalmei__alive-progress.35853799.func_basic__uqrx9laz",
+      "problem_sha256": "6489e915e9918c3199802bd8402ff44200203d80415a86e51f1c1fb469644f3d",
+      "repo": "swesmith/rsalmei__alive-progress.35853799"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "mahmoud__glom.fb3c4e76.func_basic__0p95nibl",
+      "problem_sha256": "3db16b2cd4f1d9bdfd0b4314093787f01c8b311e036b1db9568f17d6524e2b50",
+      "repo": "swesmith/mahmoud__glom.fb3c4e76"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "pexpect__ptyprocess.1067dbda.func_pm_remove_assign__ivbnyzsb",
+      "problem_sha256": "8d4f2373180672f70d399edf61a32fa1c222610743c978d434c36c03329d5d04",
+      "repo": "swesmith/pexpect__ptyprocess.1067dbda"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "agronholm__exceptiongroup.0b4f4937.func_pm_ctrl_invert_if__84qwxcks",
+      "problem_sha256": "6583c123da6a551111f2e458a24178a60a7997cd05def9264a25cc8dce9bf880",
+      "repo": "swesmith/agronholm__exceptiongroup.0b4f4937"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "pyutils__line_profiler.a646bf0f.lm_rewrite__x2fdgpvo",
+      "problem_sha256": "99cc3002433baf41cb2444fda6bd956a1ca9e1e59f6d1861d8b0927f914a6844",
+      "repo": "swesmith/pyutils__line_profiler.a646bf0f"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "benoitc__gunicorn.bacbf8aa.func_basic__1hx2pzdt",
+      "problem_sha256": "84eafe93a1666f7ba1775b2a7a1c084a28855f13a171a12872464eed5a9f0fe4",
+      "repo": "swesmith/benoitc__gunicorn.bacbf8aa"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "dask__dask.5f61e423.lm_rewrite__mg1dv74w",
+      "problem_sha256": "eb0008b9efbfb861cfea2b12d5e88929643fddc50e60ea0463b70ee2a696b201",
+      "repo": "swesmith/dask__dask.5f61e423"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "prettytable__prettytable.ca90b055.pr_312",
+      "problem_sha256": "c463b0b71942f8e993f2921ad92fd07716bda4113f8c44623911aefc826510dd",
+      "repo": "swesmith/prettytable__prettytable.ca90b055"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "gweis__isodate.17cb25eb.combine_module__ok3uvp63",
+      "problem_sha256": "c47b831ecccf6b496409e2dd0ee013921cdaab493ad576fb2bf99e62072a65cf",
+      "repo": "swesmith/gweis__isodate.17cb25eb"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "pallets__click.fde47b4b.func_basic__209e1c84",
+      "problem_sha256": "14a5056a6770b50342ff7df29367b7d6b277e1bd600d6ffe8a736f1efff13319",
+      "repo": "swesmith/pallets__click.fde47b4b"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "HIPS__autograd.ac044f0d.func_pm_ctrl_shuffle__hugjmogw",
+      "problem_sha256": "ff031bf3a34aca649a011f198574ea66ee6cd7824ea1ba8e29e4d47306638331",
+      "repo": "swesmith/HIPS__autograd.ac044f0d"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "django-money__django-money.835c1ab8.combine_module__ldmvdwt0",
+      "problem_sha256": "31fdf7d144f5be30d6beebb51a53109fde5311ea7bf6da87c3258110947cb423",
+      "repo": "swesmith/django-money__django-money.835c1ab8"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "erikrose__parsimonious.0d3f5f93.lm_rewrite__1x6ivn2x",
+      "problem_sha256": "7da71bcdd1a54decdcab54d141ab90129a5459278055d5b0de8503abd4149018",
+      "repo": "swesmith/erikrose__parsimonious.0d3f5f93"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "google__textfsm.c31b6007.func_basic__70troej4",
+      "problem_sha256": "f876e963369f5b77966a46a78496031697647d26247c596dda056b493140961e",
+      "repo": "swesmith/google__textfsm.c31b6007"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "agronholm__typeguard.b6a7e438.func_pm_remove_cond__netpr44z",
+      "problem_sha256": "962fca30c2f68d5cf1d1c30803154cbc44f40b7924012059a737238789507069",
+      "repo": "swesmith/agronholm__typeguard.b6a7e438"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "python-hyper__h11.bed0dd4a.lm_rewrite__lwydv6nc",
+      "problem_sha256": "c560a48b3509bbdcdac69cf94f6a23d93a10575c22bbea916db5d9afb46dc699",
+      "repo": "swesmith/python-hyper__h11.bed0dd4a"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "pyasn1__pyasn1.0f07d724.func_pm_class_rm_funcs__rmgd4ild",
+      "problem_sha256": "d6976940046820fad5dc43146ef8a2b4cfae7d330241e3afab60daaf6dfe9697",
+      "repo": "swesmith/pyasn1__pyasn1.0f07d724"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "rubik__radon.54b88e58.func_basic__thg7wu9z",
+      "problem_sha256": "9ae7ec65cd18f882938f90cd34b8e2030f1f1d265e0b0c13af90803412129694",
+      "repo": "swesmith/rubik__radon.54b88e58"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "pudo__dataset.5c2dc8d3.lm_rewrite__yhnstbok",
+      "problem_sha256": "a9942e207f58d52a73a8446c11166d23c9b1f9835cf358d45b67ce40d529c50e",
+      "repo": "swesmith/pudo__dataset.5c2dc8d3"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "dbader__schedule.82a43db1.func_basic__lkgmauei",
+      "problem_sha256": "d8ec51aee2da935fc4d22b57fbcd0a2289d764c39d75e9878c2b83e9dc26de10",
+      "repo": "swesmith/dbader__schedule.82a43db1"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "gruns__furl.da386f68.lm_rewrite__tbj3nwho",
+      "problem_sha256": "277a3a4a8ae478ecda2d91fbacd9aa6e14ea97ebf46ef507fb8800975b641ec4",
+      "repo": "swesmith/gruns__furl.da386f68"
+    },
+    {
+      "group": "out_domain",
+      "instance_id": "jsvine__pdfplumber.02ff4313.func_pm_ctrl_shuffle__va6wvzq0",
+      "problem_sha256": "e08ce125c6ac97e59fa9a2da074269cd97819ee2dd9f942f420eb8304df2c4bb",
+      "repo": "swesmith/jsvine__pdfplumber.02ff4313"
+    }
+  ],
+  "schema_version": 1,
+  "selection": {
+    "combine_file_instances_included": false,
+    "in_domain_count": 25,
+    "in_domain_repo": "swesmith/scanny__python-pptx.278b47b1",
+    "language": "python",
+    "out_domain_count": 25,
+    "seed": 42
+  },
+  "test_ids_sha256": "68eef6593798a28f521d4f4f45dafd25949bba8c0e520272df47756119c69711",
+  "training_exclusion": {
+    "index_path": "/Users/lcp/Documents/try/CPCodeAgent/qwen35_9b_lora/data/index.jsonl",
+    "instance_count": 51,
+    "instance_ids_sha256": "61d3e09fdcac64e362565cfa6507222d44bf4322eae0890ef19609bfe374b625"
+  }
+}

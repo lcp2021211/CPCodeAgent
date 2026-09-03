@@ -309,7 +309,7 @@ def main() -> int:
     parser.add_argument("--lora-summary", type=Path, required=True)
     parser.add_argument("--output-prefix", type=Path, required=True)
     parser.add_argument("--bootstrap-samples", type=int, default=20000)
-    parser.add_argument("--seed", type=int, default=20260903)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--allow-incomplete", action="store_true")
     args = parser.parse_args()
 

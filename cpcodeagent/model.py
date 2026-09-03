@@ -105,6 +105,7 @@ class OpenAICompatibleModel:
 
         stream = self._open_stream(params)
         content: list[str] = []
+        visible = _VisibleContentFilter()
         tool_fragments: dict[int, dict[str, str]] = {}
         prompt_tokens = 0
         completion_tokens = 0
@@ -121,9 +122,15 @@ class OpenAICompatibleModel:
                 delta = choices[0].delta
                 text = getattr(delta, "content", None)
                 if text:
-                    content.append(text)
-                    if on_text is not None:
-                        on_text(text)
+                    exposed = visible.feed(text)
+                    if exposed:
+                        content.append(exposed)
+                        if on_text is not None:
+                            on_text(exposed)
+
+                # Compatible providers may expose private reasoning separately as
+                # ``reasoning_content``. It is deliberately neither streamed nor
+                # copied into the durable assistant response.
 
                 for raw_delta in getattr(delta, "tool_calls", None) or ():
                     index = getattr(raw_delta, "index", None)
@@ -144,6 +151,12 @@ class OpenAICompatibleModel:
         except Exception as exc:  # noqa: BLE001
             self._raise_normalized(exc)
             raise AssertionError("unreachable")
+
+        tail = visible.finish()
+        if tail:
+            content.append(tail)
+            if on_text is not None:
+                on_text(tail)
 
         calls = tuple(
             ToolCall(
@@ -187,6 +200,78 @@ class OpenAICompatibleModel:
         if any(token in exc.__class__.__name__.lower() for token in ("timeout", "connection")):
             raise TransientModelError(message) from exc
         raise ModelError(message) from exc
+
+
+class _VisibleContentFilter:
+    """Remove provider-emitted thinking blocks across arbitrary stream chunks."""
+
+    _OPEN = "<think>"
+    _CLOSE = "</think>"
+
+    def __init__(self) -> None:
+        self._pending = ""
+        self._hidden = False
+        self._visible_started = False
+
+    def feed(self, text: str) -> str:
+        data = self._pending + text
+        self._pending = ""
+        output: list[str] = []
+
+        while data:
+            markers = (self._CLOSE,) if self._hidden else (self._OPEN, self._CLOSE)
+            match = self._first_marker(data, markers)
+            if match is not None:
+                index, marker = match
+                if not self._hidden:
+                    self._append_visible(output, data[:index])
+                data = data[index + len(marker) :]
+                if self._hidden:
+                    self._hidden = False
+                elif marker == self._OPEN:
+                    self._hidden = True
+                # An unmatched closing tag is provider framing too; omit it.
+                continue
+
+            retained = self._partial_marker_length(data, markers)
+            ready = data[:-retained] if retained else data
+            if not self._hidden:
+                self._append_visible(output, ready)
+            self._pending = data[-retained:] if retained else ""
+            break
+
+        return "".join(output)
+
+    def finish(self) -> str:
+        pending = self._pending
+        self._pending = ""
+        if self._hidden:
+            return ""
+        output: list[str] = []
+        self._append_visible(output, pending)
+        return "".join(output)
+
+    def _append_visible(self, output: list[str], value: str) -> None:
+        if not self._visible_started:
+            value = value.lstrip()
+            if not value:
+                return
+            self._visible_started = True
+        output.append(value)
+
+    @staticmethod
+    def _first_marker(data: str, markers: tuple[str, ...]) -> tuple[int, str] | None:
+        matches = ((data.find(marker), marker) for marker in markers)
+        present = tuple(item for item in matches if item[0] >= 0)
+        return min(present, default=None, key=lambda item: item[0])
+
+    @staticmethod
+    def _partial_marker_length(data: str, markers: tuple[str, ...]) -> int:
+        maximum = min(len(data), max(len(marker) for marker in markers) - 1)
+        for length in range(maximum, 0, -1):
+            if any(marker.startswith(data[-length:]) for marker in markers):
+                return length
+        return 0
 
 
 class ResilientModel:

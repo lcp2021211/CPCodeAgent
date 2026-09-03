@@ -264,12 +264,19 @@ class RecordedModelGroup:
 class EventRecorder:
     """Persist structured progress events and stream text separately."""
 
-    def __init__(self, directory: Path, redactor: Redactor, verbose: bool = True):
+    def __init__(
+        self,
+        directory: Path,
+        redactor: Redactor,
+        verbose: bool = True,
+        prefix: str = "",
+    ):
         self.writer = JsonlWriter(directory / "events.jsonl", redactor)
         self.stream_path = directory / "stream.txt"
         self.stream_path.parent.mkdir(parents=True, exist_ok=True)
         self._stream_lock = threading.Lock()
         self.verbose = verbose
+        self.prefix = f"{prefix} " if prefix else ""
 
     def __call__(self, event: RunEvent) -> None:
         if event.kind is RunEventKind.TEXT_DELTA:
@@ -287,10 +294,19 @@ class EventRecorder:
         if not self.verbose:
             return
         if event.kind is RunEventKind.MODEL_START:
-            print(f"  model: {event.data.get('model', '?')}", flush=True)
+            print(f"{self.prefix}model: {event.data.get('model', '?')}", flush=True)
+        elif event.kind is RunEventKind.MODEL_END:
+            print(f"{self.prefix}model response received", flush=True)
         elif event.kind is RunEventKind.TOOLS_START:
             calls = event.data.get("calls", ())
             names = [getattr(call, "name", "?") for call in calls]
-            print(f"  tools: {', '.join(names)}", flush=True)
+            print(f"{self.prefix}tools: {', '.join(names)}", flush=True)
+        elif event.kind is RunEventKind.TOOLS_END:
+            print(f"{self.prefix}tools completed", flush=True)
+        elif event.kind is RunEventKind.VERIFY_START:
+            print(f"{self.prefix}verifying patch", flush=True)
         elif event.kind is RunEventKind.VERIFY_END:
-            print(f"  patch verifier: {event.data.get('passed')}", flush=True)
+            print(
+                f"{self.prefix}patch verifier: {event.data.get('passed')}",
+                flush=True,
+            )

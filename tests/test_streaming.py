@@ -150,6 +150,38 @@ class StreamingTests(unittest.TestCase):
         self.assertTrue(request["stream"])
         self.assertEqual(request["stream_options"], {"include_usage": True})
 
+    def test_hides_fragmented_thinking_from_stream_and_response(self) -> None:
+        client = _Client(
+            [
+                [
+                    _Chunk(_Delta(content="<thi")),
+                    _Chunk(_Delta(content="nk>private reasoning")),
+                    _Chunk(_Delta(content="</th")),
+                    _Chunk(_Delta(content="ink>\n\nvisible ")),
+                    _Chunk(_Delta(content="answer")),
+                ]
+            ]
+        )
+        model = OpenAICompatibleModel("thinking-model", "key", client=client)
+        pieces: list[str] = []
+
+        response = model.complete([], [], pieces.append)
+
+        self.assertEqual(pieces, ["visible ", "answer"])
+        self.assertEqual(response.content, "visible answer")
+        self.assertNotIn("think", response.content)
+        self.assertNotIn("private reasoning", response.content)
+
+    def test_preserves_incomplete_non_tag_text_at_end_of_stream(self) -> None:
+        client = _Client([[_Chunk(_Delta(content="literal <thi"))]])
+        model = OpenAICompatibleModel("stream-model", "key", client=client)
+        pieces: list[str] = []
+
+        response = model.complete([], [], pieces.append)
+
+        self.assertEqual("".join(pieces), "literal <thi")
+        self.assertEqual(response.content, "literal <thi")
+
     def test_retries_without_stream_options_when_provider_rejects_them(self) -> None:
         client = _Client([_BadRequest("unsupported"), [_Chunk(_Delta(content="ok"))]])
         model = OpenAICompatibleModel("compatible", "key", client=client)
