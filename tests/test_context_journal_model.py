@@ -60,7 +60,7 @@ class ContextJournalModelTests(unittest.TestCase):
         self.assertIn("Remember this.", view.messages[1]["content"])
         self.assertIn("Fix it.", view.messages[1]["content"])
 
-    def test_recovery_guidance_after_tool_result_keeps_valid_roles(self) -> None:
+    def test_durable_stall_guidance_after_tool_result_keeps_valid_roles(self) -> None:
         journal = Journal()
         call = ToolCall("read-1", "read_file", {"path": "missing.py"})
         journal.append(EventKind.INPUT, {"content": "Inspect it.", "source": "user"})
@@ -81,10 +81,12 @@ class ContextJournalModelTests(unittest.TestCase):
             },
         )
         journal.append(
-            EventKind.INPUT,
+            EventKind.STALL_STATE,
             {
-                "content": "Choose a different approach.",
-                "source": "kernel_recovery",
+                "fingerprint": "same-action",
+                "streak": 0,
+                "warned": True,
+                "guidance": "Choose a different approach.",
             },
         )
 

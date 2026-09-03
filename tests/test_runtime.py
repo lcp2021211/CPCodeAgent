@@ -43,6 +43,34 @@ class ProbeTool(Tool):
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_duplicate_calls_in_one_response_execute_only_once(self) -> None:
+        state = {
+            "lock": threading.Lock(),
+            "active": 0,
+            "max_active": 0,
+            "reads_done": 0,
+            "write_saw": 0,
+        }
+        runtime = ToolRuntime([ProbeTool("read", True, state)])
+        journal = Journal()
+        with tempfile.TemporaryDirectory() as directory:
+            results = runtime.execute_batch(
+                [
+                    ToolCall("first", "read", {"path": "same"}),
+                    ToolCall("duplicate", "read", {"path": "same"}),
+                ],
+                RunPolicy(),
+                LocalExecutor(directory),
+                journal,
+                response_seq=4,
+            )
+
+        self.assertTrue(results[0].ok)
+        self.assertEqual(results[1].error, "DUPLICATE_CALL")
+        self.assertEqual(state["reads_done"], 1)
+        self.assertEqual(len(journal.find(EventKind.TOOL_CALL)), 2)
+        self.assertEqual(len(journal.find(EventKind.TOOL_RESULT)), 2)
+
     def test_read_batches_are_parallel_and_write_is_a_barrier(self) -> None:
         state = {
             "lock": threading.Lock(),

@@ -187,5 +187,6 @@ class RunProgress:
     steps: int = 0
     tokens: int = 0
     started_at: float = 0.0
-    recent_fingerprints: list[str] = field(default_factory=list)
-    recovery_used: bool = False
+    stall_fingerprint: str | None = None
+    stall_streak: int = 0
+    stall_warned: bool = False

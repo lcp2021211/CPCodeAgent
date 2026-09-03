@@ -24,6 +24,7 @@ class EventKind(str, Enum):
     TOOL_STARTED = "tool_started"
     TOOL_RESULT = "tool_result"
     CHECKPOINT = "checkpoint"
+    STALL_STATE = "stall_state"
     FINAL = "final"
 
 

@@ -263,6 +263,19 @@ class ContextEngine:
                         event.seq,
                         state.turn_model_steps,
                     )
+        elif event.kind is EventKind.STALL_STATE:
+            guidance = str(event.data.get("guidance", "")).strip()
+            if guidance:
+                message = {"role": "user", "content": guidance}
+                state.blocks.append(
+                    ContextBlock(
+                        event.seq,
+                        event.seq,
+                        [message],
+                        self._message_tokens(message),
+                    )
+                )
+                state.history_tokens += state.blocks[-1].token_count
         elif event.kind is EventKind.MEMORY_SNAPSHOT:
             user = str(event.data.get("user", "")).strip()
             session = str(event.data.get("session", "")).strip()
