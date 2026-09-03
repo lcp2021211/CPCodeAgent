@@ -488,7 +488,47 @@ class ContextEngine:
             messages.append({"role": "user", "content": state.summary})
         for block in state.blocks:
             messages.extend(dict(message) for message in block.messages)
-        return ContextView(tuple(messages), state.summary)
+        return ContextView(
+            tuple(ContextEngine._normalize_message_roles(messages)),
+            state.summary,
+        )
+
+    @staticmethod
+    def _normalize_message_roles(
+        messages: Sequence[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Make the projected history valid for strict chat templates.
+
+        Some providers, including Swift's Qwen templates, treat both ``user`` and
+        ``tool`` as query-side messages and require an assistant response between
+        queries. Harness guidance can otherwise create ``user -> user`` (pinned
+        context before the task) or ``tool -> user`` (recovery after a failed tool)
+        sequences. Fold that guidance into the preceding query-side message while
+        leaving the durable Journal untouched.
+        """
+
+        normalized: list[dict[str, Any]] = []
+        for source in messages:
+            message = dict(source)
+            if (
+                message.get("role") == "user"
+                and normalized
+                and normalized[-1].get("role") in {"user", "tool"}
+            ):
+                previous = normalized[-1]
+                label = (
+                    "[Additional user context]"
+                    if previous.get("role") == "user"
+                    else "[Harness guidance after tool result]"
+                )
+                prior_content = str(previous.get("content") or "")
+                extra_content = str(message.get("content") or "")
+                previous["content"] = (
+                    f"{prior_content}\n\n{label}\n{extra_content}".strip()
+                )
+                continue
+            normalized.append(message)
+        return normalized
 
     def _system_prompt(
         self,

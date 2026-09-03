@@ -11,3 +11,5 @@ trajectory_experiments/.venv/
 trajectory_experiments/data/
 trajectory_experiments/runs/
 trajectory_experiments/vendor/
+
+exp/runs/

@@ -41,6 +41,66 @@ class WorkingModel:
 
 
 class ContextJournalModelTests(unittest.TestCase):
+    def test_pinned_context_is_merged_with_the_initial_user_message(self) -> None:
+        journal = Journal()
+        journal.append(
+            EventKind.MEMORY_SNAPSHOT,
+            {"digest": "v1", "user": "Remember this.", "session": ""},
+        )
+        journal.append(EventKind.INPUT, {"content": "Fix it.", "source": "user"})
+
+        view = ContextEngine().build(
+            journal,
+            "Fix it.",
+            "/workspace",
+            "read only",
+        )
+
+        self.assertEqual([message["role"] for message in view.messages], ["system", "user"])
+        self.assertIn("Remember this.", view.messages[1]["content"])
+        self.assertIn("Fix it.", view.messages[1]["content"])
+
+    def test_recovery_guidance_after_tool_result_keeps_valid_roles(self) -> None:
+        journal = Journal()
+        call = ToolCall("read-1", "read_file", {"path": "missing.py"})
+        journal.append(EventKind.INPUT, {"content": "Inspect it.", "source": "user"})
+        journal.append(
+            EventKind.MODEL_RESPONSE,
+            {"response": ModelResponse(tool_calls=(call,)).to_dict()},
+        )
+        journal.append(EventKind.TOOL_CALL, {"call": call.to_dict()})
+        journal.append(
+            EventKind.TOOL_RESULT,
+            {
+                "result": ToolResult(
+                    "read-1",
+                    False,
+                    "File does not exist.",
+                    error="NOT_FOUND",
+                ).to_dict()
+            },
+        )
+        journal.append(
+            EventKind.INPUT,
+            {
+                "content": "Choose a different approach.",
+                "source": "kernel_recovery",
+            },
+        )
+
+        view = ContextEngine().build(
+            journal,
+            "Inspect it.",
+            "/workspace",
+            "read only",
+        )
+
+        self.assertEqual(
+            [message["role"] for message in view.messages],
+            ["system", "user", "assistant", "tool"],
+        )
+        self.assertIn("Choose a different approach.", view.messages[-1]["content"])
+
     def test_live_context_consumes_only_events_after_its_projection(self) -> None:
         journal = TrackingJournal()
         journal.append(EventKind.INPUT, {"content": "first", "source": "user"})
