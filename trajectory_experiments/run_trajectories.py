@@ -312,8 +312,11 @@ def run_one(
     args: argparse.Namespace,
     run_dir: Path,
     dataset_manifest: dict[str, Any],
+    task_number: int,
+    task_total: int,
 ) -> dict[str, Any]:
     instance_id = instance[KEY_INSTANCE_ID]
+    progress = f"[{task_number}/{task_total}][{instance_id}]"
     task_dir = run_dir / instance_id
     summary_path = task_dir / "summary.json"
     if args.resume and summary_path.exists():
@@ -322,13 +325,13 @@ def run_one(
         except (OSError, json.JSONDecodeError):
             summary = {"agent": {"status": "runner_error"}}
         if not summary_has_runner_error(summary):
-            print(f"[{instance_id}] skipped (completed summary)", flush=True)
+            print(f"{progress} skipped (completed summary)", flush=True)
             return summary
         archived = archive_previous_attempt(task_dir)
-        print(f"[{instance_id}] retrying; previous attempt archived at {archived}", flush=True)
+        print(f"{progress} retrying; previous attempt archived at {archived}", flush=True)
     elif args.resume and task_dir.exists() and any(task_dir.iterdir()):
         archived = archive_previous_attempt(task_dir)
-        print(f"[{instance_id}] retrying interrupted attempt; archived at {archived}", flush=True)
+        print(f"{progress} retrying interrupted attempt; archived at {archived}", flush=True)
 
     task_dir.mkdir(parents=True, exist_ok=True)
     redactor = Redactor.from_environment()
@@ -344,6 +347,7 @@ def run_one(
             "package": "cpcodeagent",
             "source_commit": args.agent_commit,
             "tools": [
+                "plan_write",
                 "read_file",
                 "list_files",
                 "search_text",
@@ -360,7 +364,7 @@ def run_one(
         },
     }
     write_json(task_dir / "manifest.json", manifest, redactor)
-    print(f"[{instance_id}] image={image}", flush=True)
+    print(f"{progress} starting; image={image}", flush=True)
 
     container = None
     started = time.monotonic()
@@ -373,11 +377,16 @@ def run_one(
         executor = PersistentContainerExecutor(container, image, REPO_ROOT)
         tools = build_container_runtime(executor)
         recording_model = create_model(args, task_dir, redactor)
-        events = EventRecorder(task_dir, redactor, verbose=not args.quiet)
+        events = EventRecorder(
+            task_dir,
+            redactor,
+            verbose=not args.quiet,
+            prefix=progress,
+        )
         harness = Harness(
             model=recording_model,
             tools=tools,
-            context=ContextEngine(),
+            context=ContextEngine(max_context_tokens=args.context_window_tokens),
             policy=RunPolicy(),
             verifier=RequirePatchVerifier(executor),
             limits=RunLimits(args.max_steps, args.max_seconds, args.max_tokens),
@@ -422,6 +431,7 @@ def run_one(
 
     evaluation: dict[str, Any] = {"status": "not_run", "resolved": False}
     if args.evaluate and patch.strip():
+        print(f"{progress} grading patch", flush=True)
         try:
             evaluation = evaluate_patch(
                 instance,
@@ -454,7 +464,7 @@ def run_one(
     }
     write_json(summary_path, summary, redactor)
     print(
-        f"[{instance_id}] agent={agent_result['status']} "
+        f"{progress} finished; agent={agent_result['status']} "
         f"resolved={evaluation.get('resolved', False)} "
         f"seconds={summary['wall_seconds']:.1f}",
         flush=True,
@@ -538,6 +548,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--max-seconds", type=float)
     parser.add_argument("--max-tokens", type=int)
+    parser.add_argument("--context-window-tokens", type=int)
     return parser
 
 
@@ -563,10 +574,13 @@ def main(argv: list[str] | None = None) -> int:
     args.max_steps = args.max_steps or int_env("CPCODEAGENT_MAX_STEPS", 40)
     args.max_seconds = args.max_seconds or float_env("CPCODEAGENT_MAX_SECONDS", 1_800)
     args.max_tokens = args.max_tokens or int_env("CPCODEAGENT_MAX_TOKENS", 200_000)
+    args.context_window_tokens = args.context_window_tokens or int_env(
+        "CPCODEAGENT_CONTEXT_WINDOW_TOKENS", 128_000
+    )
     if not args.api_key:
         parser.error("OPENAI_API_KEY is missing; set it in --env-file or the environment")
-    if args.count < 1 or args.workers < 1:
-        parser.error("--count and --workers must be positive")
+    if args.count < 1 or args.workers < 1 or args.context_window_tokens < 1:
+        parser.error("--count, --workers, and --context-window-tokens must be positive")
     try:
         json.loads(args.request_options_json)
     except json.JSONDecodeError as exc:
@@ -626,19 +640,27 @@ def main(argv: list[str] | None = None) -> int:
         "language": args.language,
         "include_combined": args.include_combined,
         "workers": args.workers,
+        "context_window_tokens": args.context_window_tokens,
         "stop_on_runner_error": args.stop_on_runner_error,
         "instance_ids": [item[KEY_INSTANCE_ID] for item in instances],
         "dataset": dataset_manifest,
         "agent_commit": args.agent_commit,
     }
     write_json(run_dir / "run_manifest.json", run_manifest, Redactor.from_environment())
-    print(f"Run directory: {run_dir}")
-    print(f"Selected {len(instances)} task(s)")
+    print(f"Run directory: {run_dir}", flush=True)
+    print(f"Selected {len(instances)} task(s); seed={args.seed}", flush=True)
 
     summaries: list[dict[str, Any]] = []
     if args.workers == 1:
-        for instance in instances:
-            summary = run_one(instance, args, run_dir, dataset_manifest)
+        for task_number, instance in enumerate(instances, start=1):
+            summary = run_one(
+                instance,
+                args,
+                run_dir,
+                dataset_manifest,
+                task_number,
+                len(instances),
+            )
             summaries.append(summary)
             write_aggregate(run_dir, args.run_id, summaries, len(instances))
             if args.stop_on_runner_error and summary_has_runner_error(summary):
@@ -647,8 +669,16 @@ def main(argv: list[str] | None = None) -> int:
     else:
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
             futures = {
-                pool.submit(run_one, instance, args, run_dir, dataset_manifest): instance
-                for instance in instances
+                pool.submit(
+                    run_one,
+                    instance,
+                    args,
+                    run_dir,
+                    dataset_manifest,
+                    task_number,
+                    len(instances),
+                ): instance
+                for task_number, instance in enumerate(instances, start=1)
             }
             for future in as_completed(futures):
                 summary = future.result()

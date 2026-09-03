@@ -19,6 +19,7 @@ from typing import Any, ClassVar
 import docker
 from docker.models.containers import Container
 
+from cpcodeagent.builtin_tools import PlanWriteTool
 from cpcodeagent.executor import (
     CommandResult,
     ExecutionEnv,
@@ -437,6 +438,7 @@ def build_container_runtime(executor: PersistentContainerExecutor) -> ToolRuntim
     workspace = ContainerWorkspace(executor)
     return ToolRuntime(
         [
+            PlanWriteTool(),
             ReadFileTool(workspace),
             ListFilesTool(workspace),
             SearchTextTool(workspace),

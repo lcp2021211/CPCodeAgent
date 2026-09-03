@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from itertools import pairwise
 from pathlib import Path
 
 from cpcodeagent.builtin_tools import build_default_runtime
@@ -160,7 +161,8 @@ class HarnessTests(unittest.TestCase):
                         )
                     )
                 )
-            harness = Harness(ScriptedModel(responses), build_default_runtime())
+            model = ScriptedModel(responses)
+            harness = Harness(model, build_default_runtime())
 
             outcome = harness.run(
                 "Find a missing file", LocalExecutor(directory), Journal(), "loop-run"
@@ -168,6 +170,13 @@ class HarnessTests(unittest.TestCase):
 
             self.assertEqual(outcome.status, RunStatus.FAILED)
             self.assertIn("no progress", outcome.answer)
+            recovery_messages = model.requests[3][0]
+            recovery_roles = [message["role"] for message in recovery_messages]
+            self.assertNotIn(("tool", "user"), pairwise(recovery_roles))
+            self.assertIn(
+                "Reassess the evidence",
+                recovery_messages[-1]["content"],
+            )
 
 
 if __name__ == "__main__":

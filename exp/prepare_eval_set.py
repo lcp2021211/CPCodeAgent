@@ -128,7 +128,7 @@ def main() -> int:
     parser.add_argument("--in-domain-repo", required=True)
     parser.add_argument("--in-domain-count", type=int, default=25)
     parser.add_argument("--out-domain-count", type=int, default=25)
-    parser.add_argument("--seed", type=int, default=20260903)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--language", default="python")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
@@ -153,7 +153,7 @@ def main() -> int:
         "in_domain_repo": args.in_domain_repo,
         "in_domain_count": args.in_domain_count,
         "out_domain_count": args.out_domain_count,
-        "combined_instances_included": False,
+        "combine_file_instances_included": False,
     }
     if not args.overwrite and load_existing(output, ids_output, selection):
         return 0
@@ -219,6 +219,7 @@ def main() -> int:
         if dataset_manifest_path.exists()
         else {"path": str(dataset_path), "task_count": len(dataset)}
     )
+    dataset_manifest["path"] = str(dataset_path)
     manifest = {
         "schema_version": 1,
         "created_at": datetime.now(UTC).isoformat(),

@@ -16,7 +16,7 @@ The default frozen set contains **50 tasks**:
 - 25 in-domain tasks from `swesmith/scanny__python-pptx.278b47b1`;
 - 25 out-of-domain Python tasks, balanced across repositories where possible.
 
-Selection is deterministic with seed `20260903`. It excludes combined-mutation tasks,
+Selection is deterministic with seed `42`. It excludes combined-file mutation tasks,
 tasks without problem statements, and every `instance_id` present in the LoRA training
 index. This removes all 46 training trajectories and all 5 development trajectories used
 to choose the best checkpoint. `prepare_eval_set.py` writes only IDs and problem hashes,
@@ -112,10 +112,27 @@ Generate or regenerate only the comparison report:
 ```bash
 qwen35_9b_lora/.venv/bin/python exp/compare_results.py \
   --eval-manifest exp/eval_set.json \
-  --base-summary exp/runs/qwen35-9b-ab-n50-seed20260903-base/summary.json \
-  --lora-summary exp/runs/qwen35-9b-ab-n50-seed20260903-lora/summary.json \
-  --output-prefix exp/reports/qwen35-9b-ab-n50-seed20260903
+  --base-summary exp/runs/qwen35-9b-ab-n50-seed42-base/summary.json \
+  --lora-summary exp/runs/qwen35-9b-ab-n50-seed42-lora/summary.json \
+  --output-prefix exp/reports/qwen35-9b-ab-n50-seed42
 ```
+
+## Remote model, local evaluator
+
+When the model is already running on a server and its OpenAI-compatible API is forwarded
+to this machine, `run_eval.sh` reads `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and
+`CPCODEAGENT_MODEL` from the repository `.env`. Keep the SSH tunnel open and start Docker
+Desktop, then run only the base arm locally:
+
+```bash
+cd /Users/lcp/Documents/try/CPCodeAgent
+bash exp/run_eval.sh base
+```
+
+The script verifies `/health`, checks the exact served model name, freezes the effective
+configuration in the run directory, and resumes completed runs without mixing changed
+budgets or endpoints. `run_ab.sh` is intended for the separate case where this machine
+also starts and stops both model servers itself.
 
 ## Outputs
 
@@ -133,4 +150,3 @@ exp/reports/<run-tag>.json        full machine-readable metrics
 
 The local API key is only a loopback authentication token and is never written to the
 experiment configuration snapshot.
-

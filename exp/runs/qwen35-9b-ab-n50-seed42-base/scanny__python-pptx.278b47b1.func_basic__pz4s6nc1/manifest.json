@@ -1,0 +1,39 @@
+{
+  "agent": {
+    "package": "cpcodeagent",
+    "source_commit": "67376afb6aec06c8a083aa5e0a13c82de808a266",
+    "tools": [
+      "plan_write",
+      "read_file",
+      "list_files",
+      "search_text",
+      "write_file",
+      "edit_file",
+      "run_command"
+    ]
+  },
+  "dataset": {
+    "dataset_id": "SWE-bench/SWE-smith",
+    "downloaded_at": "2026-08-21T17:22:28.829956+00:00",
+    "fingerprint": "7e75b7f644fe5b29",
+    "path": "/Users/lcp/.codex/worktrees/4135/CPCodeAgent/trajectory_experiments/data/swesmith_train",
+    "revision": "ea6d7173829c7ec8fa16c22055699ff2e9188091",
+    "split": "train",
+    "task_count": 59136
+  },
+  "instance": {
+    "image": "swebench/swesmith.x86_64.scanny_1776_python-pptx.278b47b1",
+    "image_name": "jyangballin/swesmith.x86_64.scanny_1776_python-pptx.278b47b1",
+    "instance_id": "scanny__python-pptx.278b47b1.func_basic__pz4s6nc1",
+    "problem_statement": "OLE object icon rId returns incorrect value\n\n#### Description\n\nWhen creating OLE objects with icons, the relationship ID (rId) for the icon image is being returned incorrectly. The method `_icon_rId` is appending an extra \"1\" to the relationship ID, causing issues with icon display.\n\n#### Steps/Code to Reproduce\n\n```python\nfrom pptx.shapes.shapetree import _OleObjectElementCreator\n\n# Mock the slide part to return a specific rId\nclass MockSlidePart:\n    def get_or_add_image_part(self, image_file):\n        return (None, 'rId16')\n\n# Create an OLE object element creator\nelement_creator = _OleObjectElementCreator(None, None, None, None, None, None, None, None, None, None, None)\nelement_creator._slide_part = MockSlidePart()\nelement_creator._icon_image_file = 'obj-icon.emf'\n\n# Get the icon rId\nrId = element_creator._icon_rId\nprint(f\"Expected: rId16\")\nprint(f\"Actual: {rId}\")\n```\n\nThe expected output should be `rId16` but instead returns `rId161`.",
+    "repo": "swesmith/scanny__python-pptx.278b47b1"
+  },
+  "runtime": {
+    "container_arch": "x86_64",
+    "git_history_replaced": true,
+    "host_platform": "macOS-15.5-arm64-arm-64bit",
+    "network_disabled_during_agent": true
+  },
+  "schema_version": 1,
+  "started_at": "2026-09-03T10:33:58.772825+00:00"
+}
