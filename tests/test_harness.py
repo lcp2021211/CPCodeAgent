@@ -33,6 +33,30 @@ class CountingContextEngine(ContextEngine):
 
 
 class HarnessTests(unittest.TestCase):
+    def test_stall_guard_state_is_rebuilt_from_the_journal(self) -> None:
+        journal = Journal()
+        turn = journal.append(
+            EventKind.INPUT,
+            {"content": "Inspect", "source": "user", "turn_id": "turn-0001"},
+        )
+        journal.append(
+            EventKind.STALL_STATE,
+            {
+                "turn_id": "turn-0001",
+                "fingerprint": "durable-fingerprint",
+                "streak": 1,
+                "warned": True,
+                "workspace_revision": "revision-1",
+                "guidance": None,
+            },
+        )
+
+        progress = Harness._progress(journal, turn.seq)
+
+        self.assertEqual(progress.stall_fingerprint, "durable-fingerprint")
+        self.assertEqual(progress.stall_streak, 1)
+        self.assertTrue(progress.stall_warned)
+
     def test_normal_agent_steps_reuse_one_hot_context_projection(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             context = CountingContextEngine()
@@ -149,34 +173,46 @@ class HarnessTests(unittest.TestCase):
     def test_repeated_no_progress_stops_after_one_recovery(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             responses = []
-            for index in range(6):
+            for index, call_count in enumerate((1, 2, 4, 8)):
                 responses.append(
                     ModelResponse(
-                        tool_calls=(
+                        tool_calls=tuple(
                             ToolCall(
-                                f"read-{index}",
+                                f"read-{index}-{call_index}",
                                 "read_file",
                                 {"path": "missing.py"},
-                            ),
+                            )
+                            for call_index in range(call_count)
                         )
                     )
                 )
             model = ScriptedModel(responses)
             harness = Harness(model, build_default_runtime())
+            journal = Journal()
 
             outcome = harness.run(
-                "Find a missing file", LocalExecutor(directory), Journal(), "loop-run"
+                "Find a missing file", LocalExecutor(directory), journal, "loop-run"
             )
 
             self.assertEqual(outcome.status, RunStatus.FAILED)
             self.assertIn("no progress", outcome.answer)
-            recovery_messages = model.requests[3][0]
+            self.assertEqual(len(model.requests), 4)
+            recovery_messages = model.requests[2][0]
             recovery_roles = [message["role"] for message in recovery_messages]
             self.assertNotIn(("tool", "user"), pairwise(recovery_roles))
             self.assertIn(
-                "Reassess the evidence",
+                "Correct the argument types",
                 recovery_messages[-1]["content"],
             )
+            duplicate_results = [
+                event
+                for event in journal.find(EventKind.TOOL_RESULT)
+                if event.data["result"].get("error") == "DUPLICATE_CALL"
+            ]
+            self.assertEqual(len(duplicate_results), 11)
+            stall = journal.last(EventKind.STALL_STATE)
+            self.assertIsNotNone(stall)
+            self.assertTrue(stall.data["warned"])
 
 
 if __name__ == "__main__":

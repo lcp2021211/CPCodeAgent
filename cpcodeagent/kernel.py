@@ -19,7 +19,7 @@ from .policy import Approver, RejectingApprover, RunPolicy
 from .recovery import ActionLedger, ActionRecord
 from .session import SessionState
 from .skills import SkillRegistry
-from .tools import ToolRuntime
+from .tools import ToolRuntime, semantic_tool_call_key
 from .types import (
     ContextView,
     ModelResponse,
@@ -364,32 +364,48 @@ class Harness:
                     tuple(result.call_id for result in results),
                     current_view.memory_snapshot,
                 )
-                fingerprint = _fingerprint(response.tool_calls, results)
-                progress.recent_fingerprints.append(fingerprint)
-                progress.recent_fingerprints = progress.recent_fingerprints[-3:]
-                if len(progress.recent_fingerprints) == 3 and len(set(progress.recent_fingerprints)) == 1:
-                    if progress.recovery_used:
-                        return self._finish(
-                            journal,
-                            run_id,
-                            RunStatus.FAILED,
-                            "Stopped after the same action batch made no progress repeatedly.",
-                            progress,
-                            turn_id,
-                        )
-                    journal.append(
-                        EventKind.INPUT,
-                        {
-                            "content": (
-                                "The last action batch repeated without progress. Reassess the evidence "
-                                "and choose a different approach; do not repeat the same calls."
-                            ),
-                            "source": "kernel_recovery",
-                            "turn_id": turn_id,
-                        },
+                workspace_revision = executor.snapshot().revision
+                fingerprint = _fingerprint(
+                    response.tool_calls,
+                    results,
+                    workspace_revision,
+                )
+                if fingerprint == progress.stall_fingerprint:
+                    progress.stall_streak += 1
+                else:
+                    progress.stall_fingerprint = fingerprint
+                    progress.stall_streak = 1
+                    progress.stall_warned = False
+
+                guidance: str | None = None
+                stop_for_stall = False
+                if progress.stall_streak >= 2:
+                    if progress.stall_warned:
+                        stop_for_stall = True
+                    else:
+                        guidance = _stall_guidance(response.tool_calls, results)
+                        progress.stall_warned = True
+                        progress.stall_streak = 0
+                journal.append(
+                    EventKind.STALL_STATE,
+                    {
+                        "turn_id": turn_id,
+                        "fingerprint": progress.stall_fingerprint,
+                        "streak": progress.stall_streak,
+                        "warned": progress.stall_warned,
+                        "workspace_revision": workspace_revision,
+                        "guidance": guidance,
+                    },
+                )
+                if stop_for_stall:
+                    return self._finish(
+                        journal,
+                        run_id,
+                        RunStatus.FAILED,
+                        "Stopped after the same semantic tool actions made no progress repeatedly.",
+                        progress,
+                        turn_id,
                     )
-                    progress.recovery_used = True
-                    progress.recent_fingerprints.clear()
                 continue
 
             outcome = self._settle_completion(
@@ -612,6 +628,7 @@ class Harness:
             + int(event.data.get("completion_tokens", 0))
             for event in journal.find(EventKind.CONTEXT_COMPACTION, after_seq)
         )
+        stall = journal.last(EventKind.STALL_STATE, after_seq)
         return RunProgress(
             steps=len(responses),
             tokens=(
@@ -619,10 +636,13 @@ class Harness:
                 + compression_tokens
             ),
             started_at=time.monotonic(),
-            recovery_used=any(
-                event.data.get("source") == "kernel_recovery"
-                for event in journal.find(EventKind.INPUT, after_seq)
+            stall_fingerprint=(
+                str(stall.data.get("fingerprint"))
+                if stall is not None and stall.data.get("fingerprint")
+                else None
             ),
+            stall_streak=int(stall.data.get("streak", 0)) if stall is not None else 0,
+            stall_warned=bool(stall.data.get("warned", False)) if stall is not None else False,
         )
 
     def _finish(
@@ -693,17 +713,60 @@ class Harness:
         )
 
 
-def _fingerprint(calls: tuple[ToolCall, ...], results: tuple[ToolResult, ...]) -> str:
-    value = {
-        "calls": [{"name": call.name, "arguments": call.arguments} for call in calls],
-        "results": [
-            {
+def _fingerprint(
+    calls: tuple[ToolCall, ...],
+    results: tuple[ToolResult, ...],
+    workspace_revision: str,
+) -> str:
+    actions: dict[str, dict[str, object]] = {}
+    for call, result in zip(calls, results, strict=True):
+        if result.error == "DUPLICATE_CALL":
+            continue
+        key = semantic_tool_call_key(call)
+        actions[key] = {
+            "name": call.name,
+            "arguments": call.arguments,
+            "result": {
                 "ok": result.ok,
                 "error": result.error,
-                "output": result.output[:500],
-            }
-            for result in results
-        ],
+            },
+        }
+    value = {
+        "workspace_revision": workspace_revision,
+        "actions": [actions[key] for key in sorted(actions)],
     }
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _stall_guidance(
+    calls: tuple[ToolCall, ...],
+    results: tuple[ToolResult, ...],
+) -> str:
+    repeated: list[str] = []
+    seen: set[str] = set()
+    duplicate_count = 0
+    for call, result in zip(calls, results, strict=True):
+        if result.error == "DUPLICATE_CALL":
+            duplicate_count += 1
+            continue
+        key = semantic_tool_call_key(call)
+        if key in seen:
+            continue
+        seen.add(key)
+        arguments = json.dumps(call.arguments, ensure_ascii=False, sort_keys=True)
+        outcome = result.error or ("ok" if result.ok else "failed")
+        detail = result.output.strip().replace("\n", " ")[:300]
+        repeated.append(f"- {call.name} {arguments} -> {outcome}: {detail}")
+    duplicate_note = (
+        f" {duplicate_count} duplicate call(s) in the latest response were suppressed."
+        if duplicate_count
+        else ""
+    )
+    evidence = "\n".join(repeated) or "- No distinct executable tool action was produced."
+    return (
+        "The same semantic tool action repeated for two consecutive steps without any "
+        f"workspace progress.{duplicate_note}\nRepeated evidence:\n{evidence}\n"
+        "Do not issue these calls again unchanged. Correct the argument types required by "
+        "the tool schema, or choose a materially different approach."
+    )

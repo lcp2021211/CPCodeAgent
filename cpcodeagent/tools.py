@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Sequence
@@ -111,7 +112,30 @@ class ToolRuntime:
     ) -> tuple[ToolResult, ...]:
         env = ExecutionEnv(executor)
         approver = approver or RejectingApprover()
-        prepared = [self._prepare(call, policy, env, approver) for call in calls]
+        prepared: list[_Prepared] = []
+        seen: set[str] = set()
+        for call in calls:
+            key = semantic_tool_call_key(call)
+            if key in seen:
+                prepared.append(
+                    _Prepared(
+                        call,
+                        self._tools.get(call.name),
+                        None,
+                        ToolResult(
+                            call.id,
+                            False,
+                            output=(
+                                f"Duplicate {call.name} call suppressed: identical arguments "
+                                "already appeared in this model response."
+                            ),
+                            error="DUPLICATE_CALL",
+                        ),
+                    )
+                )
+                continue
+            seen.add(key)
+            prepared.append(self._prepare(call, policy, env, approver))
 
         results: list[ToolResult] = []
         index = 0
@@ -518,6 +542,17 @@ class ToolRuntime:
             ),
             error="UNKNOWN_COMMIT",
         )
+
+
+def semantic_tool_call_key(call: ToolCall) -> str:
+    """Canonical action identity independent of provider-generated call IDs."""
+
+    return json.dumps(
+        {"name": call.name, "arguments": call.arguments},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 def _validate(schema: dict[str, Any], arguments: Any, path: str = "arguments") -> str | None:
