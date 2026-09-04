@@ -1,391 +1,179 @@
 # CPCodeAgent
 
-CPCodeAgent is a compact coding-agent harness implemented in Python. Its goal is not to
-maximize framework surface area, but to make six difficult properties explicit:
+CPCodeAgent 是一个使用 Python 实现的轻量级编程智能体框架。它可以在指定工作区中读取和修改代码、执行命令、运行验证，并通过持久化日志安全地完成多轮任务。
 
-1. a session is a durable sequence of turns, while model context is only a replayable view;
-2. one semantic `Action` classification drives scheduling, permission, and retry;
-3. read calls may run concurrently while side effects cross deterministic barriers;
-4. every side effect follows a durable intent/start/commit protocol, so interrupted
-   actions are reconciled from evidence and never replayed blindly.
-5. complex turns can maintain a visible, crash-recoverable execution plan that stays
-   pinned even when older conversation history is compressed.
-6. bounded child agents get fresh context and isolated execution, while the parent receives
-   only a small structured result and remains responsible for the final decision.
+项目强调简洁、可恢复和可审计，适合研究编程智能体的核心机制，也可以作为小型代码 Agent 的实现基础。
 
-## Architecture
+## 核心功能
 
-```text
-Session
-   ├── Turn 1        INPUT → THINK → ACT → CHECK → FINAL
-   ├── Turn 2        INPUT → THINK → ACT → CHECK → FINAL
-   ├── Memory        USER.md + sessions/<session-id>.md
-   └── Journal       append-only history, memory snapshots, recovery
-          │
-          ├── Context       pinned memory + current plan + compacted history + active skill
-          ├── ActionRuntime classify → policy → intent → start → commit
-          │                           └── recovery contract → reconcile
-          └── Subagent      fresh context + child Journal + isolated workspace
-                                      └── structured result → parent judgment
-```
+- **多轮会话**：会话状态持久保存，可使用会话 ID 随时恢复。
+- **代码操作**：内置文件读取、搜索、编辑、写入和命令执行工具。
+- **安全恢复**：工具调用采用 `INTENT → STARTED → COMMITTED` 流程，中断后根据实际文件状态决定提交、重试或停止。
+- **权限控制**：统一管理读取、工作区写入、网络和外部副作用，可设置允许、询问或拒绝。
+- **并发调度**：连续的只读工具可并发执行，写操作通过串行屏障保证顺序。
+- **上下文压缩**：完整事件保存在 Journal 中，模型上下文可按窗口压力分层压缩和重建。
+- **任务规划**：复杂任务可以维护可见、可恢复的执行计划，避免未完成就提前结束。
+- **子智能体**：支持只读调研和隔离修改，补丁由主智能体检查后显式应用。
+- **记忆与 Skills**：支持用户级、会话级 Markdown 记忆和按需加载的 `SKILL.md`。
+- **流式终端**：实时显示模型输出、工具进度和验证结果，并支持回退模型。
 
-The implementation deliberately has no generic hook bus, planner DAG, or generic agent
-graph. Extension happens through a few direct interfaces: `Model`, `Tool`,
-`Policy`, `Executor`, `SkillRegistry`, and `Verifier`.
+## 设计亮点
 
-## Data flow
+### 可恢复的执行日志
 
-1. `Harness` creates a session with a fixed workspace and policy, then appends one user
-   input for each turn.
-2. `MemoryManager` snapshots bounded user/session Markdown memory into the journal;
-   `ContextEngine` pins that version ahead of recent history. A disposable `ContextState`
-   consumes only Journal events newer than its `projected_seq`; startup, recovery, and
-   context-overflow retry rebuild it from the complete Journal.
-3. The model returns text and/or `ToolCall` values.
-4. Every tool first runs `classify(arguments) -> Action`. The action contains only its
-   required capabilities, concrete targets, and idempotency.
-5. `RunPolicy` returns `ALLOW`, `ASK`, or `DENY`; an authorized tool then creates a small
-   `EffectContract` describing safe recovery.
-6. The runtime fsyncs a `TOOL_CALL` intent before execution, fsyncs `TOOL_STARTED` before
-   handing control to the tool, and commits one `TOOL_RESULT` with observed revisions.
-7. Consecutive read-only actions execute in parallel. A write or external effect is a
-   serial barrier.
-8. Results and a workspace checkpoint are durably appended before the next model call.
-9. A final model answer passes through one optional `Verifier` before the turn succeeds.
-   The next user message starts a new turn with fresh budgets and the same durable history.
+Journal 是追加写入的持久化事实源，记录模型响应、工具意图、执行结果和工作区版本。模型上下文只是从 Journal 构建出的临时视图，因此会话可以在启动、中断或上下文溢出后重建。
 
-## Incremental and layered context
+文件写入恢复时会比较执行前后的内容摘要：已达到目标状态则补记提交，仍是原状态则安全重试，出现其他状态则报告冲突。无法验证结果的命令不会被盲目重放。详细设计见 [崩溃一致性说明](docs/crash-consistency.md)。
 
-The Journal is cold durable state; `ContextState` is a hot, disposable projection:
+### 隔离的子智能体
 
-```text
-normal step:  Journal.after(projected_seq) → ContextState → ContextView → model
-recovery:     complete Journal             → ContextState → ContextView → model
-```
+`inspect` 子任务共享工作区，但只能读取；`patch` 子任务在工作区副本中修改。子智能体拥有独立上下文和 Journal，不能继续创建下一层子智能体，修改结果也不会自动合并到主工作区。
 
-Context pressure retreats in three increasingly expensive layers. At 50% of the configured
-window, verbose tool results are mechanically shortened in the hot view without a model call.
-At 70%, the model summarizes older complete interaction blocks while the latest four blocks
-remain verbatim. At 90%, an emergency summary folds the previous summary and all but the
-latest two blocks into a tighter continuation state. Raw inputs and tool results are never
-rewritten.
+### 清晰的扩展接口
 
-Semantic summaries are appended as small `CONTEXT_COMPACTION` events with their Journal
-boundary. Recovery therefore replays the exact accepted summary instead of paying for a new
-one or allowing summary drift. Configure the model window with
-`CPCODEAGENT_CONTEXT_WINDOW_TOKENS`; token estimates use a dependency-free mixed-language
-approximation.
+项目通过少量接口扩展能力：`Model`、`Tool`、`Policy`、`Executor`、`SkillRegistry` 和 `Verifier`，没有引入复杂的通用 Agent Graph。
 
-## Package layout
+## 快速开始
 
-```text
-cpcodeagent/
-  kernel.py          four-state run loop and budgets
-  session.py         session identity, turn projection, safe journal lookup
-  context.py         incremental hot context and replayable layered compaction
-  planning.py        turn-scoped plan validation, status, and rendering
-  subagents.py       bounded delegation, child runtime, and overlay artifacts
-  memory.py          bounded user/session Markdown memory and journal snapshots
-  skills.py          SKILL.md discovery and progressive loading
-  tools.py           Tool contract and barrier scheduler
-  builtin_tools.py   small workspace coding toolset
-  policy.py          one ALLOW / ASK / DENY decision
-  executor.py        confined file I/O, local execution, Docker sandbox
-  journal.py         durable append-only JSONL event journal
-  recovery.py        action-ledger projection and effect contracts
-  model.py           provider-neutral streaming, retry, one fallback
-  ui.py              Rich spinner, token stream, tool and verifier progress
-  verifier.py        explicit completion gate
-```
+### 1. 安装
 
-## Planning complex work
-
-For work with three or more steps, multiple files, refactors, migrations, or an uncertain
-implementation path, the model performs enough read-only discovery to make a sound plan,
-then calls the built-in `plan_write` tool before modifying the workspace. Short tasks can
-continue directly without planning overhead.
-
-`plan_write` replaces one bounded list of at most eight items. Items use only `pending`,
-`in_progress`, and `completed`, with at most one item in progress. It has the internal
-`RUNTIME_WRITE` capability: it crosses a scheduler barrier but requires no workspace-write
-authority. Its normal durable tool intent/result records are sufficient to reconstruct the
-latest committed plan, so no second plan database exists.
-
-The current plan is pinned ahead of compressed history. After three agent steps without an
-update, the context view adds a short ephemeral reminder. If a plan exists, the completion
-gate refuses a final answer while any item remains unfinished; the model must continue or
-revise the plan. A new user turn resets the working plan, while the completed turn remains
-auditable in the Journal.
-
-## Bounded child agents
-
-The parent can call `delegate_task(task, mode, contract_id?)` when a bounded investigation
-would otherwise fill its context with low-level exploration. Delegation is intentionally not
-a general agent graph:
-
-```text
-parent tool call
-    └── action-id-scoped child run
-          ├── fresh ContextState (no parent transcript, plan, summary, or memory)
-          ├── separate Journal and 12-step budget
-          ├── filtered tools (no delegate_task, therefore no grandchildren)
-          ├── optional immutable shared contract
-          └── submit_result(summary, evidence, recommendation)
-                         ↓
-              bounded SubagentResult in parent context
-```
-
-Tightly coupled files stay in one child task when practical. If work must be split across
-children, the parent first calls `write_shared_contract(name, content)` once, then passes the
-returned content-addressed `contract_id` to every related delegation:
-
-```text
-write_shared_contract ──→ contract-<sha256>
-                              ├── delegate_task(index.html, contract_id)
-                              ├── delegate_task(styles.css, contract_id)
-                              └── delegate_task(app.js, contract_id)
-```
-
-Contracts are short Markdown interface specifications stored at
-`<journal-dir>/_subagents/<session-id>/contracts/`. They are immutable: changing their name
-or content creates a new ID. Each child receives the exact same read-only text but no sibling
-trajectory, and each patch records the contract ID used to produce it. A child that discovers
-an invalid contract reports the conflict through its normal structured result; only the
-parent can publish a revised contract and re-delegate work. Contracts constrain interfaces
-but cannot grant tools, permissions, network access, or workspace authority.
-
-`inspect` children share the parent workspace only through read tools; write and command
-tools are absent. `patch` children receive a persistent copied workspace. Their writes never
-touch the parent checkout, and local children still receive no command tool because a local
-process is not an OS sandbox. A Docker-backed parent may give the overlay child a sandboxed
-command tool. Changed bytes are stored as a patch manifest outside the repository under
-`<journal-dir>/_subagents/<session-id>/<action-id>/patch.json`. The parent receives its
-artifact ID and changed paths, then uses an explicit two-stage merge:
-
-```text
-read_subagent_patch(artifact_id)   → bounded unified diff
-apply_subagent_patch(artifact_id)  → verify baselines → durable parent writes
-```
-
-Application never happens inside `delegate_task`. `apply_subagent_patch` first verifies that
-the artifact belongs to the current workspace, validates its content digests, and refuses to
-overwrite any path that matches neither the recorded before nor after state. This leaves the
-main Agent responsible for reviewing and accepting the child change.
-
-The parent Journal contains only the normal `delegate_task` intent/start/result lifecycle.
-The complete child trajectory stays in the child Journal. Because the action ID is also the
-child-run directory key, recovery after “child finished, parent result not committed” reuses
-the completed structured result; an incomplete child resumes from its own Journal. No child
-trajectory is copied into the parent model context or streamed into the terminal.
-Patch application uses the same intent/start/commit protocol as built-in writes. If a
-multi-file apply is interrupted, recovery continues only while every target still matches
-either its recorded before-state or after-state; any third state becomes a recovery conflict.
-
-## Skill model
-
-At startup, only a skill's name, description, and version enter the context. The model
-must call `use_skill` to snapshot the full instructions into the journal and activate
-them. A skill can require tools but cannot grant authority. Supporting files are read
-through `read_skill_resource`; scripts still go through the normal command tool and
-sandbox.
-
-Project skills live under `.cpcodeagent/skills/<name>/SKILL.md`. A minimal example:
-
-```markdown
----
-name: debugging
-description: Diagnose a reproducible failure using evidence-first iterations.
-requires-tools: [read_file, search_text, edit_file, run_command]
----
-
-Reproduce the failure, trace the smallest relevant path, make a focused change, and verify it.
-```
-
-## Layered persistent memory
-
-Memory is deliberately file-based and has only two scopes:
-
-```text
-~/.cpcodeagent/memory/USER.md                  shared by all sessions
-~/.cpcodeagent/memory/sessions/<session-id>.md isolated to one session
-```
-
-Successful turns upsert one bounded `turn-*` summary into session memory. Explicit notes
-use stable content-derived `note-*` keys. User memory is never inferred from repository or
-tool output; it changes only through an explicit terminal command:
-
-```text
-/memory [user|session]
-/remember user Prefer pytest for Python tests.
-/remember session The migration must remain backward compatible.
-/forget user note-0123456789ab
-/forget session all
-```
-
-User memory is capped at 8 KB and session memory at 12 KB. When session memory fills, old
-automatic turn summaries are removed before explicit notes. Before each model request, the
-current documents are snapshotted into the append-only journal. This makes the precise
-memory version replayable while keeping the Markdown files directly inspectable and
-editable; managed entries use `## <key>` headings, and free-form text is preserved as a
-`manual` entry on the next update. Persistent memory is treated as fallible context and
-cannot expand policy or override system instructions.
-
-## Failure semantics
-
-The action journal is a write-ahead log with three externally meaningful states:
-
-```text
-INTENT --durable TOOL_STARTED--> STARTED --durable TOOL_RESULT--> COMMITTED
-```
-
-Recovery makes only three decisions:
-
-- **Retry** when there is no `TOOL_STARTED` marker, or when a started operation is
-  explicitly retry-safe.
-- **Reconcile** deterministic file writes against their recorded before/after content
-  digests. A matching postcondition is committed as recovered; a matching precondition
-  proves the atomic replace did not happen and permits one safe retry.
-- **Stop** with `RECOVERY_CONFLICT` when a file matches neither state, or
-  `UNKNOWN_COMMIT` when an opaque side effect such as a command started but cannot be
-  verified. Neither case is automatically replayed.
-
-Runtime-owned file writes use per-action staging names, fsync file contents, atomically
-replace the target, and fsync the containing directory. An interrupted final model
-response is also settled from the journal instead of being requested from the provider
-a second time. See [`docs/crash-consistency.md`](docs/crash-consistency.md) for the
-invariants and extension contract.
-
-Model API retries are owned by `ResilientModel`, so provider SDK retries should remain
-disabled. Context overflow triggers one forced compaction. A provider can have one
-explicit fallback model. Three identical action batches trigger one recovery instruction;
-if the loop repeats, the turn stops with its checkpoint intact.
-
-## Streaming terminal UX
-
-Every provider call uses `stream=True`. Text deltas are rendered immediately instead of
-waiting for the complete response. Function-call names and JSON arguments are also
-streamed by providers, so `model.py` reassembles their fragments by call index before the
-normal policy and tool runtime sees them. Providers that reject OpenAI's optional usage
-stream field are retried once without that field while keeping streaming enabled.
-
-The terminal uses one neutral progress-event stream rather than UI hooks spread through
-the harness:
-
-```text
-⠋ Thinking…
-agent › I will inspect the relevant files first.
-▸ search_text {"query": "SessionState", "pattern": "**/*.py"}
-⠋ Running 1 tool…
-✓ search_text cpcodeagent/session.py:32:class SessionState:
-agent › The session boundary is enforced in two places…
-succeeded turn=turn-0002  steps=3  tokens=1842
-```
-
-If a connection fails before any text arrives, the existing bounded retry/fallback policy
-applies. Once partial text has reached the terminal, automatic retry is suppressed so the
-same paragraph is not printed twice. Only a completed model response is committed to the
-durable Journal.
-
-## Quick start
-
-Requires Python 3.11+.
+需要 Python 3.11 或更高版本。
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
 python -m pip install -e '.[dev]'
+```
 
-# Edit the existing .env file and fill in OPENAI_API_KEY first.
-# Environment variables and CLI arguments can still override it.
+### 2. 配置模型
 
-# Start a durable multi-turn session.
+```bash
+cp .env.example .env
+```
+
+编辑 `.env`，至少填写：
+
+```dotenv
+OPENAI_API_KEY=your-api-key
+CPCODEAGENT_MODEL=gpt-4.1
+```
+
+使用 OpenAI API 兼容服务时，额外设置：
+
+```dotenv
+OPENAI_BASE_URL=https://your-provider.example/v1
+```
+
+配置优先级为：命令行参数 > Shell 环境变量 > `.env` > 内置默认值。
+
+### 3. 启动
+
+处理当前目录：
+
+```bash
 cpcodeagent
 ```
 
-CPCodeAgent automatically finds the nearest `.env` from the current directory upward.
-The repository includes `.env.example`, while the real `.env` is ignored by Git. The
-configuration precedence is:
-
-```text
-CLI argument > shell environment > .env > built-in default
-```
-
-The supported `.env` settings are:
-
-```dotenv
-OPENAI_API_KEY=
-OPENAI_BASE_URL=
-CPCODEAGENT_MODEL=gpt-4.1
-CPCODEAGENT_FALLBACK_MODEL=
-
-CPCODEAGENT_WORKSPACE=.
-CPCODEAGENT_EXECUTOR=local
-CPCODEAGENT_DOCKER_IMAGE=python:3.12-slim
-CPCODEAGENT_JOURNAL_DIR=~/.cpcodeagent/runs
-CPCODEAGENT_MEMORY_DIR=~/.cpcodeagent/memory
-
-CPCODEAGENT_MAX_STEPS=40
-CPCODEAGENT_MAX_SECONDS=1800
-CPCODEAGENT_MAX_TOKENS=200000
-CPCODEAGENT_VERIFY=
-```
-
-`OPENAI_BASE_URL` makes the same adapter usable with OpenAI-compatible providers. A
-resumed session still restores its original workspace, policy, executor, and memory
-directory; model and per-turn budget values are read when the CLI starts.
-
-The interactive shell keeps one session open until `/exit` or EOF:
-
-```text
-CPCodeAgent session: a83f219d2c10
-Workspace: /project
-Commands: /status, /help, /exit
-
-you> Inspect this repository and explain its architecture
-agent> ...
-
-you> Now fix the first issue you found and run its tests
-agent> ...
-
-you> /exit
-Session saved: a83f219d2c10
-```
-
-For scripts and one-off automation, passing a task still runs one turn and exits:
+指定其他项目：
 
 ```bash
-cpcodeagent "Inspect this repository and fix the failing tests" \
-  --workspace . \
-  --verify "python -m unittest discover -s tests" \
-  --executor docker
+cpcodeagent --workspace /path/to/your/project
 ```
 
-`DockerExecutor` runs commands with no network, dropped Linux capabilities, resource
-limits, and only the workspace mounted writable. `LocalExecutor` is useful for trusted
-development: its Python file tools are path-confined, but local subprocesses are not an
-OS sandbox, so the CLI prints an explicit warning.
+执行一次性任务：
 
-Resume a durable session. If its latest turn was interrupted, CPCodeAgent reconciles that
-turn first; otherwise it immediately returns to the interactive prompt:
+```bash
+cpcodeagent "检查项目并修复失败的测试" --workspace .
+```
+
+在最终回答前运行验证：
+
+```bash
+cpcodeagent "实现需求并确保测试通过" \
+  --workspace . \
+  --verify "python -m pytest"
+```
+
+### 4. 恢复会话
 
 ```bash
 cpcodeagent --resume <session-id>
 ```
 
-Session journals live at `~/.cpcodeagent/runs/<session-id>.jsonl` by default. The journal
-starts with immutable workspace, policy, and executor metadata, then stores any number of
-sequential turns. Resume restores those boundaries instead of silently falling back to a
-different permission set or executor.
-Every turn has its own step/token/time budget. Context compaction affects only the model
-view; persistent memory stays pinned, and raw events remain available for audit and replay.
+Journal 默认保存在 `~/.cpcodeagent/runs/<session-id>.jsonl`。恢复时会沿用会话原有的工作区、权限策略和执行器。
 
-Run the offline example and tests without an API key:
+## 执行器与权限
+
+默认的 `LocalExecutor` 适合可信项目。内置文件工具只能访问工作区，但本地命令不属于操作系统级沙箱。
+
+对于不熟悉的项目，可以使用 Docker：
+
+```bash
+cpcodeagent \
+  --workspace /path/to/your/project \
+  --executor docker \
+  --docker-image python:3.12-slim
+```
+
+Docker 执行器默认关闭网络，并限制 capabilities、CPU、内存和进程数。所选镜像需要包含目标项目运行所需的环境。
+
+常用权限参数：
+
+| 参数 | 作用 |
+| --- | --- |
+| `--read-only` | 禁止工作区写入 |
+| `--allow-host HOST` | 允许访问指定网络目标，可重复使用 |
+| `--external-writes allow\|ask\|deny` | 设置外部写操作策略 |
+
+## 交互命令
+
+| 命令 | 说明 |
+| --- | --- |
+| `/status` | 查看会话状态 |
+| `/memory [user\|session]` | 查看持久记忆 |
+| `/remember <user\|session> <内容>` | 保存记忆 |
+| `/forget <user\|session> <key\|all>` | 删除记忆 |
+| `/help` | 查看帮助 |
+| `/exit` | 保存并退出 |
+
+## Skills
+
+项目级 Skill 放在 `.cpcodeagent/skills/<name>/SKILL.md`，个人 Skill 放在 `~/.cpcodeagent/skills/<name>/SKILL.md`。启动时只加载名称和描述，使用时才读取完整说明。Skill 可以声明所需工具，但不能扩大会话权限。
+
+示例见 [examples/skills/debugging/SKILL.md](examples/skills/debugging/SKILL.md)。
+
+## 架构概览
+
+```text
+Session
+   ├── Turns         INPUT → THINK → ACT → CHECK → FINAL
+   ├── Memory        用户级 + 会话级 Markdown 记忆
+   └── Journal       完整历史与恢复状态
+          ├── Context       计划、记忆与压缩历史
+          ├── Runtime       动作分类、权限、执行与恢复
+          └── Subagent      独立上下文与隔离工作区
+```
+
+核心代码位于 `cpcodeagent/`：
+
+- `kernel.py`：主运行循环和预算；
+- `context.py`：上下文构建与压缩；
+- `tools.py` / `builtin_tools.py`：工具协议和内置工具；
+- `journal.py` / `recovery.py`：持久日志和恢复；
+- `subagents.py`：子智能体与补丁；
+- `executor.py`：本地和 Docker 执行器；
+- `memory.py` / `skills.py`：记忆与 Skills。
+
+## 开发与测试
 
 ```bash
 python -m examples.offline_demo
-python -m unittest discover -s tests -v
+python -m pytest
+ruff check cpcodeagent tests
 ```
 
-## Current boundary
+查看全部参数：
 
-The core intentionally excludes recursive multi-agent graphs, MCP discovery, and automatic
-skill evolution. Its child-agent boundary is one-level and evidence-oriented: delegation
-reduces context load without transferring final authority away from the main Agent.
+```bash
+cpcodeagent --help
+```
